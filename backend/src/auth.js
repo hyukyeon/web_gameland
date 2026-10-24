@@ -39,6 +39,8 @@ const publicUser = (u) => ({
   losses: u.losses,
   sdWins: u.sdWins ?? 0, // 섯다
   sdLosses: u.sdLosses ?? 0,
+  ogWins: u.ogWins ?? 0, // 오목
+  ogLosses: u.ogLosses ?? 0,
   achievements: parseAchievements(u),
   title: u.title && parseAchievements(u).includes(u.title) ? u.title : null,
   titleText: titleText(u),
@@ -248,15 +250,16 @@ router.post('/gaepyeong', requireAuth, async (req, res) => {
   return res.json({ amount: GAEPYEONG_AMOUNT, user: publicUser(out.user) });
 });
 
-/** 랭킹: ?game=money(보유 머니, 기본) | gostop(고스톱 승수) | seotda(섯다 승수). 같은 승수면 패가 적은 순. */
+/** 랭킹: ?game=money(보유 머니, 기본) | gostop(고스톱 승수) | seotda(섯다 승수) | omok(오목 승수). 같은 승수면 패가 적은 순. */
 router.get('/ranking', async (req, res) => {
-  const game = ['gostop', 'seotda'].includes(req.query.game) ? req.query.game : 'money';
+  const game = ['gostop', 'seotda', 'omok'].includes(req.query.game) ? req.query.game : 'money';
   const order = {
     money: [{ money: 'desc' }],
     gostop: [{ wins: 'desc' }, { losses: 'asc' }],
     seotda: [{ sdWins: 'desc' }, { sdLosses: 'asc' }],
+    omok: [{ ogWins: 'desc' }, { ogLosses: 'asc' }],
   }[game];
-  const where = { isBot: false, ...(game === 'gostop' ? { wins: { gt: 0 } } : game === 'seotda' ? { sdWins: { gt: 0 } } : {}) };
+  const where = { isBot: false, ...(game === 'gostop' ? { wins: { gt: 0 } } : game === 'seotda' ? { sdWins: { gt: 0 } } : game === 'omok' ? { ogWins: { gt: 0 } } : {}) };
   const users = await prisma.user.findMany({ where, orderBy: order, take: 10 });
   res.json({ game, ranking: users.map(publicUser) });
 });

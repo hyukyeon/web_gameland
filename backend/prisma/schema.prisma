@@ -45,6 +45,14 @@ model User {
   sdBiggestPot   Int        @default(0)
   sdBestPower    Int        @default(0)
   sdBestHand     String?
+  // 오목 전적/스탯: 실전만 누적. ogBotWins 는 AI 상대 승리(연습 포함), ogFastWin 은 가장 빠른 승리의 수(0=없음)
+  ogGames        Int        @default(0)
+  ogWins         Int        @default(0)
+  ogLosses       Int        @default(0)
+  ogStreak       Int        @default(0)
+  ogBestStreak   Int        @default(0)
+  ogBotWins      Int        @default(0)
+  ogFastWin      Int        @default(0)
   // 업적(JSON 문자열 배열: SQLite 는 배열 컬럼이 없다)과 대표 칭호(업적 id)
   achievements   String     @default("[]")
   title          String?

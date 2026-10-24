@@ -94,7 +94,7 @@ function StatsPanel() {
   useEffect(() => {
     api.stats(token).then((r) => setStats(r.stats)).catch(() => {});
     api.achievements(token).then((r) => setAch(r.achievements)).catch(() => {});
-  }, [token, user.wins, user.losses, user.sdWins, user.sdLosses, user.achievements?.length]);
+  }, [token, user.wins, user.losses, user.sdWins, user.sdLosses, user.ogWins, user.ogLosses, user.achievements?.length]);
 
   const pick = async (id) => {
     try {
@@ -109,7 +109,7 @@ function StatsPanel() {
   const sd = stats.seotda;
   const tabs = (
     <div className="flex gap-1 text-xs">
-      {[['gostop', '🎴 고스톱'], ['seotda', '🃏 섯다']].map(([k, label]) => (
+      {[['gostop', '🎴 고스톱'], ['seotda', '🃏 섯다'], ['omok', '⚪ 오목']].map(([k, label]) => (
         <button key={k} className={`flex-1 rounded px-2 py-1 font-bold ${game === k ? 'bg-gold-500 text-felt-900' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} onClick={() => setGame(k)}>
           {label}
         </button>
@@ -131,6 +131,27 @@ function StatsPanel() {
     { label: '땡 승률', value: sd.wins ? sd.ttaengWins / sd.wins : 0 },
     { label: '올인', value: sd.wins ? Math.min(1, sd.allinWins / sd.wins / 0.3) : 0 },
   ];
+  const og = stats.omok;
+  if (game === 'omok' && og)
+    return (
+      <div className="space-y-3">
+        {tabs}
+        <h3 className="text-sm font-black text-gold-400">📊 오목 전적 (실전 {og.games}판)</h3>
+        <div className="space-y-1.5">
+          <Bar label="승률" value={og.winRate} text={og.games ? `${pct(og.winRate)} (${og.wins}승 ${og.losses}패)` : '-'} />
+          <Bar label="현재 연승" value={Math.min(1, og.streak / 5)} text={`${og.streak}연승`} />
+        </div>
+        <div className="grid grid-cols-4 gap-1 text-center text-[11px]">
+          {[['최고 연승', og.bestStreak], ['AI 승리', og.botWins], ['최단 승리', og.fastWin ? `${og.fastWin}수` : '-'], ['실전', og.games]].map(([k, v]) => (
+            <div key={k} className="rounded bg-white/5 py-1">
+              <div className="text-slate-400">{k}</div>
+              <b className="block truncate px-0.5">{v}</b>
+            </div>
+          ))}
+        </div>
+        <AchList list={achList} user={user} pick={pick} />
+      </div>
+    );
   if (game === 'seotda' && sd)
     return (
       <div className="space-y-3">

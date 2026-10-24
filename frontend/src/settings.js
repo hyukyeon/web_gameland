@@ -9,7 +9,16 @@ import { useSyncExternalStore } from 'react';
  *  - keyHints: 버튼/패에 단축키 표시
  */
 const KEY = 'gostop.settings';
-const DEFAULTS = { sfxVolume: 0.7, bgmVolume: 0.4, speed: 'normal', cardSize: 'md', vibrate: true, keyHints: false };
+const DEFAULTS = {
+  sfxVolume: 0.7, bgmVolume: 0.4, speed: 'normal', cardSize: 'md', vibrate: true, keyHints: false,
+  // 오목: 판 테마 / 돌 스킨 / 수 번호(off·last3·all) / 위협 표시 / 착수 확인(auto=터치 기기만·on·off) / 좌표
+  omokTheme: 'wood', omokStones: 'classic', omokNumbers: 'last3', omokThreat: false, omokConfirm: 'auto', omokCoords: true,
+};
+
+export const OMOK_THEMES = [['wood', '나무'], ['marble', '대리석'], ['dark', '다크']];
+export const OMOK_STONES = [['classic', '기본'], ['glass', '유리'], ['flat', '단색']];
+export const OMOK_NUMBERS = [['off', '끔'], ['last3', '최근 3수'], ['all', '전부']];
+export const OMOK_CONFIRM = [['auto', '자동(터치만)'], ['on', '항상'], ['off', '끔']];
 
 export const SPEEDS = [
   ['slow', '느리게', 1.35],

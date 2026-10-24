@@ -28,6 +28,13 @@ export const ACHIEVEMENTS = [
   { id: 'sd_ttangjabi', game: 'seotda', emoji: '🪤', name: '땡잡이', desc: '땡잡이로 땡을 잡음', check: ({ sd, win }) => win && sd?.special === 'ttangjabi' && sd.caught },
   { id: 'sd_double', game: 'seotda', emoji: '💰', name: '묻고 더블로 가', desc: '묻고 더블 판에서 승리', check: ({ win, double }) => win && double > 0 },
   { id: 'sd_allin', game: 'seotda', emoji: '🔥', name: '올인 승부사', desc: '올인하고 승리', check: ({ sd, win }) => win && !!sd?.allIn },
+  // ----- 오목 (ctx: { after, og: { moves, kind }, win }) -----
+  { id: 'og_first', game: 'omok', emoji: '⚫', name: '오목 첫 승', desc: '오목 실전에서 첫 승리', check: ({ after }) => after.ogWins >= 1 },
+  { id: 'og_streak3', game: 'omok', emoji: '🔥', name: '오목 3연승', desc: '오목 실전에서 3연승', check: ({ after }) => after.ogBestStreak >= 3 },
+  { id: 'og_streak5', game: 'omok', emoji: '⚔️', name: '오목 5연승', desc: '오목 실전에서 5연승', check: ({ after }) => after.ogBestStreak >= 5 },
+  { id: 'og_ai10', game: 'omok', emoji: '🤖', name: 'AI 사냥꾼', desc: '오목에서 AI 를 10번 이김 (연습 포함)', check: ({ after }) => after.ogBotWins >= 10 },
+  { id: 'og_fast', game: 'omok', emoji: '⚡', name: '속전속결', desc: '25수 이내에 오목 승리 (실전)', check: ({ after, ranked }) => ranked && after.ogFastWin > 0 && after.ogFastWin <= 25 },
+  { id: 'og_long', game: 'omok', emoji: '🏔️', name: '장기전의 달인', desc: '100수 이상 이어진 판에서 승리 (실전)', check: ({ og, win, ranked }) => ranked && win && (og?.moves ?? 0) >= 100 },
 ];
 
 export const achievementById = (id) => ACHIEVEMENTS.find((a) => a.id === id);
@@ -52,6 +59,7 @@ export function computeStats(u) {
   const g = u.statGames;
   return {
     seotda: computeSeotdaStats(u),
+    omok: computeOmokStats(u),
     games: g,
     wins: u.wins,
     losses: u.losses,
@@ -88,6 +96,21 @@ export function computeSeotdaStats(u) {
     doubleWins: u.sdDoubleWins,
     biggestPot: u.sdBiggestPot,
     bestHand: u.sdBestHand,
+  };
+}
+
+/** 오목 화면용 스탯 */
+export function computeOmokStats(u) {
+  const total = (u.ogWins ?? 0) + (u.ogLosses ?? 0);
+  return {
+    games: u.ogGames ?? 0,
+    wins: u.ogWins ?? 0,
+    losses: u.ogLosses ?? 0,
+    winRate: total ? u.ogWins / total : 0,
+    streak: u.ogStreak ?? 0,
+    bestStreak: u.ogBestStreak ?? 0,
+    botWins: u.ogBotWins ?? 0,
+    fastWin: u.ogFastWin ?? 0,
   };
 }
 
@@ -184,7 +207,7 @@ export async function applyGameStats(tx, { pids, result, ranked, outcome }) {
     for (const [k, v] of Object.entries(inc)) after[k] = (u[k] ?? 0) + v;
     const data = {};
     for (const [k, v] of Object.entries(inc)) if (v) data[k] = { increment: v };
-    const fresh = st?.active === false ? [] : unlockInto(u, data, ACHIEVEMENTS.filter((a) => a.game !== 'seotda'), { after, st, baks, win });
+    const fresh = st?.active === false ? [] : unlockInto(u, data, ACHIEVEMENTS.filter((a) => !a.game), { after, st, baks, win });
     if (fresh.length) unlocked[u.id] = fresh;
     if (Object.keys(data).length) await tx.user.update({ where: { id: u.id }, data });
   }
@@ -194,4 +217,45 @@ export async function applyGameStats(tx, { pids, result, ranked, outcome }) {
 /** 연습(비정산) 판: 머니·전적은 건드리지 않고 botWins/업적만 반영 */
 export function recordPractice({ pids, result, outcome }) {
   return prisma.$transaction((tx) => applyGameStats(tx, { pids, result, ranked: false, outcome }));
+}
+
+/**
+ * 오목 한 판 종료: 전적(ogGames/ogWins/ogLosses)·연승은 실전(ranked)만, AI 상대 승리(ogBotWins)는 연습 포함. 오목 업적 판정.
+ *  moves: 총 수. outcome: { pid: 'win'|'lose'|'draw' }
+ */
+export async function applyOmokStats(tx, { pids, moves, ranked, outcome }) {
+  const users = await tx.user.findMany({ where: { id: { in: pids } } });
+  const hasBot = users.some((u) => u.isBot);
+  const list = ACHIEVEMENTS.filter((a) => a.game === 'omok');
+  const unlocked = {};
+  for (const u of users) {
+    if (u.isBot) continue;
+    const win = outcome[u.id] === 'win';
+    const lose = outcome[u.id] === 'lose';
+    const inc = {};
+    const set = {};
+    if (ranked) {
+      Object.assign(inc, { ogGames: 1, ogWins: win ? 1 : 0, ogLosses: lose ? 1 : 0 });
+      if (win) set.ogStreak = u.ogStreak + 1;
+      else if (lose) set.ogStreak = 0;
+      if (set.ogStreak > u.ogBestStreak) set.ogBestStreak = set.ogStreak;
+      if (win && (!u.ogFastWin || moves < u.ogFastWin)) set.ogFastWin = moves;
+    }
+    if (win && hasBot) inc.ogBotWins = 1;
+    const after = { ...u, ...set };
+    const data = { ...set };
+    for (const [k, v] of Object.entries(inc)) {
+      after[k] = (u[k] ?? 0) + v;
+      if (v) data[k] = { increment: v };
+    }
+    const fresh = unlockInto(u, data, list, { after, og: { moves }, win, ranked });
+    if (fresh.length) unlocked[u.id] = fresh;
+    if (Object.keys(data).length) await tx.user.update({ where: { id: u.id }, data });
+  }
+  return unlocked;
+}
+
+/** 오목 연습 판(사람 1명 + AI): 머니·전적은 그대로, AI 승리 수와 업적만 */
+export function recordOmokPractice({ pids, moves, outcome }) {
+  return prisma.$transaction((tx) => applyOmokStats(tx, { pids, moves, ranked: false, outcome }));
 }

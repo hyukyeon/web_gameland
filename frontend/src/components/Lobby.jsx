@@ -35,13 +35,30 @@ function OptionToggles({ opts, onChange, disabled }) {
 }
 export { OptionToggles };
 
+const TURN_SECS = [10, 30, 60];
+
+/** 오목: 수당 제한 시간(초) 고르기 */
+function TurnSecPick({ value, onChange }) {
+  return (
+    <div>
+      <p className="mb-1 text-xs text-slate-300">수당 제한 시간 — 넘기면 AI 가 대신 한 수 둬요</p>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="수당 제한 시간">
+        {TURN_SECS.map((t) => (
+          <button key={t} role="radio" aria-checked={value === t} onClick={() => onChange(t)} className={`btn ${value === t ? 'btn-gold' : 'btn-ghost'}`}>{t}초</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CreateRoom({ onClose, game = 'gostop' }) {
   const { emit, user } = useApp();
   const [name, setName] = useState('');
   const [bet, setBet] = useState(100);
   const [opts, setOpts] = useState({});
+  const [turnSec, setTurnSec] = useState(30);
   const create = async () => {
-    const r = await emit('room:create', { name, bet, opts: game === 'gostop' ? opts : {}, game });
+    const r = await emit('room:create', { name, bet, opts: game === 'gostop' ? opts : {}, game, ...(game === 'omok' ? { turnSec } : {}) });
     if (r.ok) onClose();
   };
   return (
@@ -60,6 +77,7 @@ function CreateRoom({ onClose, game = 'gostop' }) {
           </div>
         </div>
         {game === 'gostop' && <OptionToggles opts={opts} onChange={setOpts} />}
+        {game === 'omok' && <TurnSecPick value={turnSec} onChange={setTurnSec} />}
         <div className="flex justify-end gap-2">
           <button className="btn btn-ghost" onClick={onClose}>취소</button>
           <button className="btn btn-gold" onClick={create}>만들기</button>
@@ -74,9 +92,9 @@ const GAME_TITLE = { gostop: '🎴 고스톱', seotda: '🃏 섯다', omok: '⚪
 const PRACTICE_KEY = 'practice.setup';
 const loadPractice = () => {
   try {
-    return { level: 'normal', bet: 100, ...JSON.parse(localStorage.getItem(PRACTICE_KEY) || '{}') };
+    return { level: 'normal', bet: 100, turnSec: 30, ...JSON.parse(localStorage.getItem(PRACTICE_KEY) || '{}') };
   } catch {
-    return { level: 'normal', bet: 100 };
+    return { level: 'normal', bet: 100, turnSec: 30 };
   }
 };
 
@@ -86,7 +104,7 @@ function PracticeSetup({ onClose, game }) {
   const [cfg, setCfg] = useState(loadPractice);
   const start = async () => {
     try { localStorage.setItem(PRACTICE_KEY, JSON.stringify(cfg)); } catch { /* 저장소 없음 */ }
-    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet, ...(cfg.level === 'auto' ? { skill: getSkill() } : {}) });
+    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet, ...(game === 'omok' ? { turnSec: cfg.turnSec } : {}), ...(cfg.level === 'auto' ? { skill: getSkill() } : {}) });
     if (r.ok) onClose();
   };
   return (
@@ -114,6 +132,7 @@ function PracticeSetup({ onClose, game }) {
             ))}
           </div>
         </div>
+        {game === 'omok' && <TurnSecPick value={cfg.turnSec} onChange={(t) => setCfg((c) => ({ ...c, turnSec: t }))} />}
         <div className="flex justify-end gap-2">
           <button className="btn btn-ghost" onClick={onClose}>취소</button>
           <button className="btn btn-gold" onClick={start}>시작하기</button>
@@ -126,7 +145,7 @@ function PracticeSetup({ onClose, game }) {
 function SidePanel({ tab, setTab }) {
   const { token, user } = useApp();
   const [ranking, setRanking] = useState([]);
-  const [rankBy, setRankBy] = useState('money'); // money | gostop | seotda
+  const [rankBy, setRankBy] = useState('money'); // money | gostop | seotda | omok
   const [records, setRecords] = useState([]);
   useEffect(() => {
     // 탭을 열 때/닉네임을 바꿀 때마다 다시 불러와서 랭킹의 표시 이름(닉네임)이 최신이 되게 한다
@@ -134,7 +153,7 @@ function SidePanel({ tab, setTab }) {
     api.records(token).then((r) => setRecords(r.records)).catch(() => {});
   }, [token, tab, user.name, rankBy]);
   const rankText = (u) =>
-    rankBy === 'gostop' ? `${u.wins}승 ${u.losses}패` : rankBy === 'seotda' ? `${u.sdWins}승 ${u.sdLosses}패` : `${won(u.money)}원`;
+    rankBy === 'gostop' ? `${u.wins}승 ${u.losses}패` : rankBy === 'seotda' ? `${u.sdWins}승 ${u.sdLosses}패` : rankBy === 'omok' ? `${u.ogWins ?? 0}승 ${u.ogLosses ?? 0}패` : `${won(u.money)}원`;
   return (
     <div className="panel flex min-h-0 flex-1 flex-col">
       <div className="grid grid-cols-3 gap-1 p-2">
@@ -145,7 +164,7 @@ function SidePanel({ tab, setTab }) {
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3 text-sm">
         {tab === 'rank' && (
           <div className="mb-1 flex gap-1 text-xs">
-            {[['money', '💰 머니'], ['gostop', '🎴 고스톱'], ['seotda', '🃏 섯다']].map(([k, label]) => (
+            {[['money', '💰 머니'], ['gostop', '🎴 고스톱'], ['seotda', '🃏 섯다'], ['omok', '⚪ 오목']].map(([k, label]) => (
               <button key={k} className={`flex-1 rounded px-2 py-1 font-bold ${rankBy === k ? 'bg-gold-500 text-felt-900' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} onClick={() => setRankBy(k)}>
                 {label}
               </button>
@@ -215,7 +234,7 @@ export function Lobby() {
             <b>{user.name}</b>
           </button>
           <span className="whitespace-nowrap text-gold-400">{won(user.money)}원</span>
-          <span className="whitespace-nowrap text-slate-300" title="고스톱 / 섯다 전적">🎴 {user.wins}승 {user.losses}패 · 🃏 {user.sdWins ?? 0}승 {user.sdLosses ?? 0}패</span>
+          <span className="whitespace-nowrap text-slate-300" title="고스톱 / 섯다 / 오목 전적">🎴 {user.wins}승 {user.losses}패 · 🃏 {user.sdWins ?? 0}승 {user.sdLosses ?? 0}패 · ⚪ {user.ogWins ?? 0}승 {user.ogLosses ?? 0}패</span>
           <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1 text-xs" onClick={openProfile}>👤 내 정보</button>
           <SoundToggle />
           <span data-tour="settings" className="inline-flex"><SettingsButton /></span>
@@ -265,7 +284,7 @@ export function Lobby() {
                     <div className="min-w-0">
                       <div className="truncate font-bold">{r.name}</div>
                       <div className="truncate text-xs text-slate-300">
-                        {r.players.join(', ')} · 판돈 {won(r.bet)}
+                        {r.players.join(', ')} · {game === 'gostop' ? '판돈' : '참가비'} {won(r.bet)}{game === 'omok' && r.turnSec ? ` · ${r.turnSec}초` : ''}
                         {game === 'gostop' && optNames(r.opts).length > 0 && ` · ${optNames(r.opts).join('/')}`}
                       </div>
                     </div>

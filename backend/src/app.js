@@ -6,6 +6,7 @@ import cors from 'cors';
 import authRouter from './auth.js';
 import slotRouter from './slot.js';
 import { attachSockets } from './sockets.js';
+import { snapshot as omokMetrics } from './omok/metrics.js';
 import { PICS_DIR, FRONTEND_DIST, UPLOAD_DIR } from './config.js';
 
 export function createServer() {
@@ -22,6 +23,7 @@ export function createServer() {
   app.use('/api/auth', authRouter);
   app.use('/api/slot', slotRouter);
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  app.get('/api/metrics/omok', (_req, res) => res.json(omokMetrics()));
 
   // 프론트엔드 빌드가 있으면 함께 서빙
   if (fs.existsSync(FRONTEND_DIST)) {

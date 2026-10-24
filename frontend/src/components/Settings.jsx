@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { isBgmOn, isSoundOn, setBgmOn, setSoundOn, onSoundChange } from '../sound.js';
-import { useSettings, setSettings, SPEEDS, CARD_SIZES, vibrate } from '../settings.js';
+import { useSettings, setSettings, SPEEDS, CARD_SIZES, OMOK_THEMES, OMOK_STONES, OMOK_NUMBERS, OMOK_CONFIRM, vibrate } from '../settings.js';
 import { canInstall, promptInstall, onInstallChange, isStandalone } from '../pwa.js';
 import { restartTour } from './Tutorial.jsx';
 import { SHORTCUTS } from '../keys.js';
@@ -95,6 +95,24 @@ export function SettingsModal({ onClose }) {
         </Row>
         <Row title="🎴 카드 크기">
           <Seg label="카드 크기" value={st.cardSize} options={CARD_SIZES} onChange={(v) => setSettings({ cardSize: v })} />
+        </Row>
+        <Row title="⚪⚫ 오목" hint="판 · 돌 · 보조 표시">
+          <div className="space-y-2">
+            <Seg label="오목판 테마" value={st.omokTheme} options={OMOK_THEMES} onChange={(v) => setSettings({ omokTheme: v })} />
+            <Seg label="돌 모양" value={st.omokStones} options={OMOK_STONES} onChange={(v) => setSettings({ omokStones: v })} />
+            <p className="text-[11px] text-slate-400">수 번호 표시</p>
+            <Seg label="수 번호 표시" value={st.omokNumbers} options={OMOK_NUMBERS} onChange={(v) => setSettings({ omokNumbers: v })} />
+            <p className="text-[11px] text-slate-400">착수 확인 (탭 → 미리보기 → 한 번 더 탭)</p>
+            <Seg label="착수 확인" value={st.omokConfirm} options={OMOK_CONFIRM} onChange={(v) => setSettings({ omokConfirm: v })} />
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" className="h-4 w-4 accent-amber-400" checked={st.omokCoords} onChange={(e) => setSettings({ omokCoords: e.target.checked })} />
+              판 가장자리에 좌표(A~O, 1~15) 표시
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" className="h-4 w-4 accent-amber-400" checked={st.omokThreat} onChange={(e) => setSettings({ omokThreat: e.target.checked })} />
+              위협 표시 (열린 3·4 를 숫자 배지로 — 초보 보조)
+            </label>
+          </div>
         </Row>
         <Row title="📳 진동" hint={canVibrate ? '내 차례 · 족보 · 승패' : '이 기기/브라우저는 진동을 지원하지 않아요'}>
           <button

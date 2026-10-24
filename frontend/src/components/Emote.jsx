@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from '../store.jsx';
 
 export const EMOTES = ['묻고 더블로 가!', '싸늘하다...', '동작그만 밑장빼기냐?', '아수라발발타'];
+// 오목 방 전용 (서버 OMOK_EMOTES 와 같아야 한다)
+export const OMOK_EMOTES = ['좋은 수네요 👍', '아차!', '잠깐만요… 생각 중이에요', '한 판 더 해요!'];
 
 /** 아바타 위(또는 아래)에 통통 튀어오르는 말풍선. 3초 뒤 서버 이벤트 없이 사라진다(스토어에서 제거 → exit 애니메이션). */
 export function EmoteBubble({ userId, below = false }) {
@@ -30,12 +32,12 @@ export function EmoteBubble({ userId, below = false }) {
 }
 
 /** 프로필 영역의 이모티콘 버튼: 누르면 타짜 명대사 목록이 뜬다 */
-export function EmoteButton({ disabled }) {
+export function EmoteButton({ disabled, list = EMOTES }) {
   const { send } = useApp();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
-      <button className="btn btn-ghost !px-2 !py-0.5 text-base" title="타짜 대사" disabled={disabled} onClick={() => setOpen((o) => !o)}>
+      <button className="btn btn-ghost !px-2 !py-0.5 text-base" title={list === EMOTES ? '타짜 대사' : '이모티콘'} disabled={disabled} onClick={() => setOpen((o) => !o)}>
         😎
       </button>
       <AnimatePresence>
@@ -46,7 +48,7 @@ export function EmoteButton({ disabled }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.9 }}
           >
-            {EMOTES.map((t) => (
+            {list.map((t) => (
               <li key={t}>
                 <button
                   className="w-full rounded-lg bg-white/10 px-2 py-1.5 text-left text-sm font-bold hover:bg-gold-500 hover:text-felt-900"

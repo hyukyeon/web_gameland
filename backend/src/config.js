@@ -29,6 +29,11 @@ export const SEOTDA_REMATCH_MS = Number(process.env.SEOTDA_REMATCH_MS) || 4000;
 export const GOSTOP_TURN_MS = Number(process.env.GOSTOP_TURN_MS) || 30000;
 // 오목: 한 수의 제한 시간 (초과하면 AI 가 한 수 대신 둔다)
 export const OMOK_TURN_MS = Number(process.env.OMOK_TURN_MS) || 30000;
+// 오목 방별 수당 시간 선택지(초). 기본은 OMOK_TURN_MS
+export const OMOK_TURN_CHOICES = [10, 30, 60];
+export const OMOK_UNDO_LIMIT = 2; // 실전 무르기 요청 횟수(사람당 판당)
+export const OMOK_PRACTICE_UNDOS = 3; // AI 연습 무르기 횟수
+export const OMOK_UNDO_ASK_MS = 15000; // 무르기 요청 응답 대기
 // 연속으로 이만큼 시간을 초과하면 그 사람은 AI 자동 진행으로 전환된다 (직접 해제 가능)
 export const AUTO_AFTER_TIMEOUTS = 2;
 // 섯다 동점 '묻고 더블' 동의 대기 시간

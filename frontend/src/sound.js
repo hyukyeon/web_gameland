@@ -202,6 +202,19 @@ const SOUNDS = {
   tick() {
     tone(1400, 0.05, { type: 'triangle', vol: 0.12 });
   },
+  // 오목 착수: '딱' — 흑은 묵직하게, 백은 조금 높고 가볍게
+  stoneB() {
+    noise(0.035, { vol: 0.5, freq: 2600, q: 1.2 });
+    tone(210, 0.1, { type: 'triangle', vol: 0.5, slide: 120 });
+  },
+  stoneW() {
+    noise(0.03, { vol: 0.42, freq: 3600, q: 1.4 });
+    tone(330, 0.08, { type: 'triangle', vol: 0.4, slide: 210 });
+  },
+  // 초읽기(내 차례 5초 이하): 짧은 삑
+  urgent() {
+    tone(1000, 0.07, { type: 'square', vol: 0.08 });
+  },
   // 배수가 붙을 때
   boost() {
     tone(500, 0.18, { type: 'square', vol: 0.08, slide: 1500 });
@@ -209,7 +222,7 @@ const SOUNDS = {
 };
 
 // 소리와 함께 울리는 진동 (효과음을 꺼도 진동 설정이 켜져 있으면 울린다)
-const HAPTIC = { turn: 35, combo: [40, 60, 40], alert: [25, 40, 25], win: [60, 40, 120], lose: 220, ppeok: [80, 40, 80], bomb: [50, 30, 90] };
+const HAPTIC = { urgent: 25, turn: 35, combo: [40, 60, 40], alert: [25, 40, 25], win: [60, 40, 120], lose: 220, ppeok: [80, 40, 80], bomb: [50, 30, 90] };
 
 export function sfx(name) {
   if (HAPTIC[name]) vibrate(HAPTIC[name]);

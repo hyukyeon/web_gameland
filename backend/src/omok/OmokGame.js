@@ -1,4 +1,4 @@
-import { BLACK, WHITE, SIZE, newBoard, inBoard, checkWin, forbiddenReason, isFull } from './rules.js';
+import { BLACK, WHITE, SIZE, newBoard, inBoard, checkWin, forbiddenReason, forbiddenCells, threatCells, isFull } from './rules.js';
 
 /**
  * 2인 오목. 흑(선공)/백. 서버가 유일한 진실: 모든 착수는 여기서 검증한다.
@@ -17,6 +17,9 @@ export class OmokGame {
     this.moves = []; // { x, y, pid, color }
     this.phase = 'playing';
     this.result = null;
+    this.startedAt = Date.now();
+    this.lastMoveAt = this.startedAt; // 마지막 착수 시각 (중복 요청 판별·소요 시간용)
+    this.cache = null; // view 용 계산 캐시 (착수 수가 바뀌면 무효)
   }
 
   get black() { return this.pids.find((p) => this.color[p] === BLACK); }
@@ -37,6 +40,7 @@ export class OmokGame {
     this.board[y][x] = color;
     const move = { x, y, pid, color };
     this.moves.push(move);
+    this.lastMoveAt = Date.now();
     const win = checkWin(this.board, x, y);
     if (win) this.#end(pid, 'five', win.line);
     else if (isFull(this.board)) this.#end(null, 'full');
@@ -52,6 +56,21 @@ export class OmokGame {
     return true;
   }
 
+  /**
+   * 무르기: pid 의 마지막 수를 되돌린다. 상대가 그 뒤에 두었다면 상대 수까지 함께 (결과적으로 pid 의 차례로 돌아온다).
+   * 반환 { ok, removed: 되돌린 수 개수 }
+   */
+  undo(pid) {
+    if (this.phase !== 'playing' || !this.pids.includes(pid)) return { ok: false, error: '무를 수 없습니다.' };
+    const mine = this.moves.map((m, i) => (m.pid === pid ? i : -1)).filter((i) => i >= 0).pop();
+    if (mine == null) return { ok: false, error: '아직 둔 수가 없습니다.' };
+    const removed = this.moves.splice(mine);
+    for (const m of removed) this.board[m.y][m.x] = 0;
+    this.turn = pid;
+    this.cache = null;
+    return { ok: true, removed: removed.length };
+  }
+
   /** 기권/퇴장: 상대 승리 */
   forfeit(pid) {
     if (this.phase !== 'playing' || !this.pids.includes(pid)) return { ok: false };
@@ -65,11 +84,27 @@ export class OmokGame {
       winner,
       kind,
       line,
+      moveCount: this.moves.length,
+      elapsedMs: Date.now() - this.startedAt,
       net: Object.fromEntries(this.pids.map((p) => [p, winner == null ? 0 : p === winner ? this.ante : -this.ante])),
     };
   }
 
+  /** 이 판에서 흑이 둘 수 없는 칸 / 위협 칸 (착수 수가 같으면 캐시) */
+  #derived() {
+    if (this.cache?.n !== this.moves.length) {
+      const blackToMove = this.phase === 'playing' && this.color[this.turn] === BLACK;
+      this.cache = {
+        n: this.moves.length,
+        forbidden: this.renju && blackToMove ? forbiddenCells(this.board) : [],
+        threats: this.phase === 'playing' ? threatCells(this.board) : [],
+      };
+    }
+    return this.cache;
+  }
+
   view() {
+    const d = this.#derived();
     return {
       size: SIZE,
       board: this.board,
@@ -80,6 +115,10 @@ export class OmokGame {
       renju: this.renju,
       last: this.last,
       moveCount: this.moves.length,
+      moves: this.moves.map((m) => [m.x, m.y]),
+      forbidden: d.forbidden,
+      threats: d.threats,
+      startedAt: this.startedAt,
       phase: this.phase,
       result: this.result,
     };

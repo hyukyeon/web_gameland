@@ -1,5 +1,5 @@
 import { prisma } from './db.js';
-import { applyGameStats, applySeotdaStats, recordPractice } from './stats.js';
+import { applyGameStats, applySeotdaStats, applyOmokStats, recordPractice } from './stats.js';
 
 /**
  * 엔진 result 에서 승/패/무를 가린다.
@@ -207,6 +207,7 @@ export async function settleOmok({ roomName, ante, pids, result, ranked = true }
         results: { create: users.filter((u) => !u.isBot).map((u) => ({ userId: u.id, outcome: outcome[u.id], moneyDelta: delta[u.id] ?? 0 })) },
       },
     });
-    return { delta, money, gameId: game.id, unlocked: {} };
+    const unlocked = await applyOmokStats(tx, { pids, moves: result.moveCount ?? 0, ranked: true, outcome });
+    return { delta, money, gameId: game.id, unlocked };
   });
 }

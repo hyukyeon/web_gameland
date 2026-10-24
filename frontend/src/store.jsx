@@ -64,6 +64,7 @@ export function AppProvider({ children }) {
   const [seotdaOver, setSeotdaOver] = useState(null);
   const [omok, setOmok] = useState(null); // 오목 게임 뷰 { board, turn, black, white, last, phase, result ... }
   const [omokOver, setOmokOver] = useState(null);
+  const [omokUndo, setOmokUndo] = useState(null); // 무르기 요청/결과 { state: ask|granted|declined|expired, from, deadlineAt, key }
   const [turnInfo, setTurnInfo] = useState(null); // { userId, deadlineAt } 현재 베팅 차례
   const [seotdaNote, setSeotdaNote] = useState(null); // 구사 재경기 안내 등
   const [tieVote, setTieVote] = useState(null); // 섯다 묻고 더블 투표 { pids, votes, deadlineAt, ante }
@@ -194,6 +195,7 @@ export function AppProvider({ children }) {
       setTimeout(() => setEmotes((e) => (e[userId]?.key === key ? { ...e, [userId]: undefined } : e)), 3000);
     });
     s.on('room:left', () => {
+      setOmokUndo(null);
       setOmok(null);
       setOmokOver(null);
       setSeotda(null);
@@ -271,12 +273,14 @@ export function AppProvider({ children }) {
     s.on('omok:start', ({ view: v }) => {
       setOmok(v);
       setOmokOver(null);
+      setOmokUndo(null);
       sfx('deal');
     });
-    s.on('omok:state', ({ view: v }) => {
+    s.on('omok:state', ({ view: v, undone }) => {
       setOmok(v);
-      sfx('chip');
+      if (undone) sfx('flip'); // 착수음은 오목판이 흑/백 구분해서 낸다
     });
+    s.on('omok:undo', (u) => setOmokUndo({ ...u, key: Date.now() + Math.random() }));
     s.on('omok:over', setOmokOver);
     s.on('TURN_START', (t) => {
       setTurnInfo(t);
@@ -376,7 +380,7 @@ export function AppProvider({ children }) {
   const send = useCallback((event, payload) => sockRef.current?.emit(event, payload), []);
 
   const value = {
-    token, user, updateUser: setUser, skew, omok, omokOver, dismissOmok: () => { setOmok(null); setOmokOver(null); }, seotda, seotdaOver, seotdaDeal, seotdaEvent, turnInfo, seotdaNote, tieVote, dismissSeotda: () => { setSeotda(null); setSeotdaOver(null); setSeotdaNote(null); setTieVote(null); }, emotes, reward, closeReward: () => setReward(null), claimGaepyeong, booting, connected, rooms, lobbyChat, room, roomChat, view, banner, combo, busy, over, startInfo, toast,
+    token, user, updateUser: setUser, skew, omok, omokOver, omokUndo, dismissOmok: () => { setOmok(null); setOmokOver(null); }, seotda, seotdaOver, seotdaDeal, seotdaEvent, turnInfo, seotdaNote, tieVote, dismissSeotda: () => { setSeotda(null); setSeotdaOver(null); setSeotdaNote(null); setTieVote(null); }, emotes, reward, closeReward: () => setReward(null), claimGaepyeong, booting, connected, rooms, lobbyChat, room, roomChat, view, banner, combo, busy, over, startInfo, toast,
     auth, logout, emit, send, notify, dismissOver: () => {
       setOver(null);
       setView(null);

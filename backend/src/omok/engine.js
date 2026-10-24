@@ -1,4 +1,4 @@
-import { dirInfo } from './rules.js';
+import { dirInfo, C as CEN, WIN_LEN } from './rules.js';
 
 /**
  * 오목 탐색 엔진 (A1·A2·A3).
@@ -150,26 +150,30 @@ export class FastBoard {
     return false;
   }
 
-  /** 흑이 cell 에 두면 금지수(장목·쌍삼)인가. 5목 완성은 금지가 아님 */
+  /** 흑이 cell 에 두면 금지수(장목·쌍삼·쌍사)인가. 5목 완성은 금지가 아님 */
   isForbiddenBlack(cell) {
     if (this.wouldWin(cell, B)) return false;
     const x = cell % N;
     const y = (cell / N) | 0;
     let threes = 0;
+    let fourz = 0;
     for (const [dx, dy] of D4) {
-      const a = new Array(9);
-      for (let i = -4; i <= 4; i++) {
-        if (i === 0) { a[4] = 'X'; continue; }
+      const a = new Array(WIN_LEN);
+      for (let i = -CEN; i <= CEN; i++) {
+        if (i === 0) { a[CEN] = 'X'; continue; }
         const nx = x + dx * i;
         const ny = y + dy * i;
-        if (nx < 0 || ny < 0 || nx >= N || ny >= N) a[i + 4] = 'O';
-        else { const v = this.c[ny * N + nx]; a[i + 4] = v === B ? 'X' : v === EMPTY ? '.' : 'O'; }
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) a[i + CEN] = 'O';
+        else { const v = this.c[ny * N + nx]; a[i + CEN] = v === B ? 'X' : v === EMPTY ? '.' : 'O'; }
       }
       const info = dirInfo(a, true);
       if (info.over) return true;
-      if (info.len < 5 && !info.pts.length && info.three) threes++;
+      if (info.len < 5) {
+        fourz += info.four;
+        if (!info.pts.length && info.three) threes++;
+      }
     }
-    return threes >= 2;
+    return threes >= 2 || fourz >= 2;
   }
 
   legal(cell, color) { return this.c[cell] === EMPTY && !(color === B && this.isForbiddenBlack(cell)); }
@@ -316,13 +320,13 @@ export class FastBoard {
     const x = cell % N;
     const y = (cell / N) | 0;
     for (const [dx, dy] of D4) {
-      const a = new Array(9);
-      for (let i = -4; i <= 4; i++) {
-        if (i === 0) { a[4] = 'X'; continue; }
+      const a = new Array(WIN_LEN);
+      for (let i = -CEN; i <= CEN; i++) {
+        if (i === 0) { a[CEN] = 'X'; continue; }
         const nx = x + dx * i;
         const ny = y + dy * i;
-        if (nx < 0 || ny < 0 || nx >= N || ny >= N) a[i + 4] = 'O';
-        else { const v = this.c[ny * N + nx]; a[i + 4] = v === me ? 'X' : v === EMPTY ? '.' : 'O'; }
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) a[i + CEN] = 'O';
+        else { const v = this.c[ny * N + nx]; a[i + CEN] = v === me ? 'X' : v === EMPTY ? '.' : 'O'; }
       }
       const info = dirInfo(a, me === B);
       if (info.len < 5 && !info.pts.length && info.three) return true;
