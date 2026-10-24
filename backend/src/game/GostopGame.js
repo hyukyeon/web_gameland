@@ -196,6 +196,7 @@ export class GostopGame {
       active: this.active,
       rest: this.rest,
       threshold: this.threshold,
+      carry: this.opt.carry,
       sale: this.sale,
       deadCount: this.dead.length,
       chongHolders: this.chongHolders,
@@ -290,7 +291,7 @@ export class GostopGame {
 
   scoreInfo(pid) {
     const s = computeScore(this.captured[pid], this.gukjin[pid]);
-    return { total: s.total, detail: s.detail, gwang: s.gwang, yeol: s.yeol, tti: s.tti, pi: s.pi };
+    return { total: s.total, detail: s.detail, gwang: s.gwang, yeol: s.yeol, tti: s.tti, pi: s.pi, sepAsPi: s.sepAsPi };
   }
 
   // ---------- 보조 ----------

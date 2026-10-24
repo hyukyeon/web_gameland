@@ -142,7 +142,7 @@ export function LobbyTour({ autoStart, blocked = false }) {
 }
 
 /** 게임 화면의 한 번짜리 도움말 말풍선 (예: 처음 내 차례가 왔을 때) */
-export function OnceHint({ id, show, children, className = '' }) {
+export function OnceHint({ id, show, done = false, children, className = '' }) {
   const key = `hint.${id}`;
   const [seen, setSeen] = useState(() => {
     try { return localStorage.getItem(key) === '1'; } catch { return true; }
@@ -151,6 +151,10 @@ export function OnceHint({ id, show, children, className = '' }) {
     try { localStorage.setItem(key, '1'); } catch { /* 무시 */ }
     setSeen(true);
   };
+  // done: 안내한 동작을 한 번 해 봤으면 스스로 닫고 다시 띄우지 않는다
+  useEffect(() => {
+    if (done && !seen) dismiss();
+  }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <AnimatePresence>
       {show && !seen && (

@@ -274,3 +274,39 @@ describe('보안', () => {
     for (const c of cs) await emit(c.s, 'room:leave');
   });
 });
+
+describe('국진 선택 (game:gukjin)', () => {
+  test('방/게임 없음 · 국진 미획득 · 잘못된 값은 거부, 획득 후 선택은 전원에게 방송되고 점수에 반영', async () => {
+    const { GostopGame } = await import('../src/game/GostopGame.js');
+    const lone = await mk('g');
+    expect((await emit(lone.s, 'game:gukjin', { mode: 'pi' })).ok).toBe(false); // 방 없음
+
+    const cs = await setupRoom(2);
+    expect((await emit(cs[0].s, 'game:gukjin', { mode: 'pi' })).ok).toBe(false); // 게임 시작 전
+    await readyAll(cs);
+    expect(cs[0].view).toBeTruthy();
+    expect((await emit(cs[0].s, 'game:gukjin', { mode: 'pi' })).error).toMatch(/국진/); // 먹지 않음
+
+    // 먹은 상태를 만들어 주는 스파이: 실제 소켓 핸들러 → 엔진 경로는 그대로 탄다
+    const orig = GostopGame.prototype.setGukjin;
+    const spy = jest.spyOn(GostopGame.prototype, 'setGukjin').mockImplementation(function (pid, mode) {
+      if (!this.captured[pid].includes(32)) this.captured[pid] = [...this.captured[pid], 32];
+      return orig.call(this, pid, mode);
+    });
+    try {
+      const [a, b] = cs;
+      expect((await emit(a.s, 'game:gukjin', { mode: 'bogus' })).ok).toBe(false);
+      const before = a.view.scores[a.user.id].total;
+      const r = await emit(a.s, 'game:gukjin', { mode: 'pi' });
+      expect(r.ok).toBe(true);
+      await sleep(900); // 프레임 방송
+      expect(a.view.gukjin[a.user.id]).toBe('pi');
+      expect(b.view.gukjin[a.user.id]).toBe('pi'); // 상대에게도 노출
+      expect(a.view.scores[a.user.id].total).toBeGreaterThanOrEqual(before);
+      // 턴을 진행시키지 않는다
+      expect(a.view.turn).toBe(b.view.turn);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

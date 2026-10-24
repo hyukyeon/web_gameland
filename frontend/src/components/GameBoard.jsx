@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { useApp } from '../store.jsx';
-import { groupCaptured, kindOf, monthOf, nearCombos, won, signed } from '../cards.js';
+import { cardImg, cardName, groupCaptured, isBonus, kindOf, monthOf, nearCombos, won, signed } from '../cards.js';
 import { Card } from './Card.jsx';
 import { Chat } from './Chat.jsx';
 import { Avatar, BotLevel } from './Avatar.jsx';
@@ -11,30 +11,40 @@ import { speedScale } from '../settings.js';
 import { hk } from '../keys.js';
 import { SettingsButton } from './Settings.jsx';
 import { OnceHint } from './Tutorial.jsx';
-import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
+import { AutoToggle, BarLabel, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { sfx } from '../sound.js';
 import { GostopHelp } from './GostopHelp.jsx';
 
-const GROUP_LABEL = { gwang: '광', tti: '띠', yeol: '멍', pi: '피' };
+const GROUP_LABEL = { gwang: '광', tti: '띠', yeol: '열끗', pi: '피' };
+// 점수가 나기 시작하는 장수 (피는 쌍피 2장으로 센 값)
+const GROUP_GOAL = { gwang: 3, tti: 5, yeol: 5, pi: 10 };
 
-/** 획득패: 광/열끗/띠/피 그룹별로 겹쳐서 보여준다 */
-const OVERLAP = 0.4; // 카드 폭의 40% 만큼씩만 어긋나게 겹쳐 컴팩트하게
-
-function Captured({ ids, size = 'xs' }) {
-  const g = useMemo(() => groupCaptured(ids), [ids]);
-  const w = { xs: 26, sm: 34, md: 52 }[size];
-  const maxW = w * 6; // 한 그룹이 이 폭을 넘으면 더 촘촘하게
+/**
+ * 획득패: 광/띠/열끗/피 그룹별로 겹쳐서 보여주고, 그룹마다 장수와 점수까지 남은 장수를 붙인다.
+ * 장수는 서버 점수(score)의 값을 쓴다(쌍피·국진 선택 반영). 카드 폭은 래퍼의 --capw 로 정한다.
+ */
+function Captured({ ids, score, className = '' }) {
+  const sepAsPi = !!score?.sepAsPi; // 국진을 쌍피로 세는 중이면 피 그룹에 보여준다
+  const g = useMemo(() => groupCaptured(ids, sepAsPi), [ids, sepAsPi]);
   return (
-    <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+    <div className={`flex flex-wrap items-end gap-x-2.5 gap-y-1 ${className}`}>
       {Object.entries(g).map(([k, list]) => {
         if (list.length === 0) return null;
-        const step = Math.max(w * 0.2, Math.min(w * OVERLAP, (maxW - w) / Math.max(1, list.length - 1)));
+        const n = list.length;
+        // 카드 폭 대비 어긋나는 비율: 장수가 많을수록 촘촘하게 (한 그룹이 카드 6장 폭을 넘지 않도록)
+        const step = Math.max(0.2, Math.min(0.42, 5 / Math.max(1, n - 1)));
+        const cnt = score?.[k] ?? n;
+        const goal = GROUP_GOAL[k];
+        const reached = cnt >= goal;
         return (
-          <div key={k} className="flex items-end" title={`${GROUP_LABEL[k]} ${list.length}`}>
-            {size !== 'xs' && <span className="mr-0.5 self-center text-[9px] leading-none text-slate-300 [writing-mode:vertical-rl]">{GROUP_LABEL[k]}{list.length}</span>}
-            <div className="relative" style={{ height: w * 1.54, width: w + (list.length - 1) * step }}>
+          <div key={k} className="flex items-end gap-1" title={`${GROUP_LABEL[k]} ${cnt}${k === 'pi' ? '장(쌍피 2장)' : '장'}: ${list.map(cardName).join(', ')}`}>
+            <span className={`cap-label flex flex-col items-center self-center rounded px-1 py-0.5 text-[10px] font-bold leading-tight ${reached ? 'bg-gold-500 text-felt-900' : 'bg-black/40 text-slate-200'}`}>
+              <span>{GROUP_LABEL[k]}</span>
+              <span className="tabular-nums">{reached ? cnt : `${cnt}/${goal}`}</span>
+            </span>
+            <div className="relative" style={{ height: 'calc(var(--capw) * 1.54)', width: `calc(var(--capw) * ${1 + (n - 1) * step})` }}>
               {list.map((id, i) => (
-                <Card key={id} id={id} size={size} className="!absolute" style={{ left: i * step, top: 0, zIndex: i }} />
+                <Card key={id} id={id} size="xs" className="!absolute !h-[calc(var(--capw)*1.54)] !w-[var(--capw)]" style={{ left: `calc(var(--capw) * ${i * step})`, top: 0, zIndex: i }} />
               ))}
             </div>
           </div>
@@ -46,6 +56,7 @@ function Captured({ ids, size = 'xs' }) {
 
 const GUKJIN_ID = 32; // 9월 국진(술잔)
 const GUKJIN_LABEL = { auto: '자동', yeol: '열끗', pi: '쌍피' };
+const GUKJIN_TO = { auto: '자동으로', yeol: '열끗으로', pi: '쌍피로' };
 
 /** 국진을 먹은 내 점수줄에 붙는 열끗/쌍피 선택 칩 */
 function GukjinChip({ view, emit }) {
@@ -55,7 +66,7 @@ function GukjinChip({ view, emit }) {
     <button
       className="rounded bg-amber-500/90 px-1.5 py-0.5 font-bold text-felt-900 hover:bg-amber-400"
       title="국진을 열끗으로 셀지 쌍피로 셀지 정합니다 (누르면 변경)"
-      aria-label={`국진 ${GUKJIN_LABEL[mode]} — 누르면 ${GUKJIN_LABEL[next]}로 변경`}
+      aria-label={`국진 ${GUKJIN_LABEL[mode]} — 누르면 ${GUKJIN_TO[next]} 변경`}
       onClick={() => emit('game:gukjin', { mode: next })}
     >
       🍶 국진: {GUKJIN_LABEL[mode]}
@@ -90,7 +101,8 @@ function ScoreChip({ view, pid, emit }) {
       {go > 0 && <span className="rounded bg-red-600 px-1.5 py-0.5 font-bold">{go}고</span>}
       {view.shakes[pid] > 0 && <span className="rounded bg-sky-600 px-1.5 py-0.5">흔들기×{view.shakes[pid]}</span>}
       {view.bombs[pid] > 0 && <span className="rounded bg-orange-600 px-1.5 py-0.5">폭탄×{view.bombs[pid]}</span>}
-      {s.detail.map((d) => (
+      {/* 광·띠·열끗·피 장수는 획득패 그룹 라벨에 있으니 여기엔 족보(홍단·고도리 등)만 */}
+      {s.detail.filter((d) => !/(광|장)$/.test(d.name)).map((d) => (
         <span key={d.name} className="rounded bg-white/10 px-1.5 py-0.5">{d.name}</span>
       ))}
       {emit && pid === view.you && view.captured[pid].includes(GUKJIN_ID) && <GukjinChip view={view} emit={emit} />}
@@ -107,13 +119,10 @@ function Opponent({ view, pid, name, player, turn, timer }) {
   const isRest = view.rest === pid;
   const cnt = view.handCounts[pid];
   return (
-    <div className={`panel min-w-0 flex-1 p-2 transition ${turn ? 'ring-2 ring-gold-400' : ''} ${isRest ? 'opacity-50' : ''}`}>
+    <div className={`panel min-w-0 flex-1 p-2 transition ${turn ? 'ring-2 ring-gold-400 shadow-[0_0_18px_rgba(251,191,36,0.35)]' : ''} ${isRest ? 'opacity-50' : ''}`}>
       <div className="mb-1 flex items-center justify-between gap-2">
         <b className="flex min-w-0 items-center gap-1.5 text-sm">
-          <span className="relative inline-flex">
-            <Avatar player={player} size={26} showTitle className={turn ? '!ring-gold-400' : ''} />
-            <EmoteBubble userId={pid} below />
-          </span>
+          <Avatar player={player} size={26} showTitle className={turn ? '!ring-gold-400' : ''} />
           {turn && <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1 }}>▶ </motion.span>}
           <span className="truncate">{name}</span>
           <BotLevel player={player} />
@@ -123,13 +132,17 @@ function Opponent({ view, pid, name, player, turn, timer }) {
         <span className="shrink-0 text-xs text-slate-300">패 {cnt}</span>
       </div>
       {!isRest && <ScoreChip view={view} pid={pid} />}
-      <div className="landscape-hide mt-1 flex h-[42px] items-end">
-        {Array.from({ length: cnt }).map((_, i) => (
-          <Card key={`b${pid}-${i}`} back size="xs" style={{ marginLeft: i ? -12 : 0 }} />
-        ))}
-      </div>
-      <div className="mt-1 min-h-[42px] landscape-auto">
-        <Captured ids={view.captured[pid]} size="xs" />
+      {/* 말풍선은 점수 칩을 가리지 않도록 뒷면 패 줄 위에 띄운다 */}
+      <div className="relative">
+        <span className="absolute left-1 top-0"><EmoteBubble userId={pid} below /></span>
+        <div className="landscape-hide mt-1 hidden h-[42px] items-end sm:flex">
+          {Array.from({ length: cnt }).map((_, i) => (
+            <Card key={`b${pid}-${i}`} back size="xs" style={{ marginLeft: i ? -14 : 0 }} />
+          ))}
+        </div>
+        <div className="landscape-cap mt-1 min-h-[42px] [--capw:calc(24px*var(--cs,1))] sm:[--capw:calc(32px*var(--cs,1))]">
+          <Captured ids={view.captured[pid]} score={view.scores[pid]} />
+        </div>
       </div>
     </div>
   );
@@ -197,12 +210,12 @@ function ComboPopup({ combo, nameOf, playerOf }) {
   );
 }
 
-/** 족보 비상(한 장 남음) 알림: 작게, 진행을 막지 않음 */
+/** 족보 비상(한 장 남음) 알림: 작게, 진행을 막지 않음. 바닥 아래쪽에 띄워 족보 완성 팝업(위쪽)과 겹치지 않게 한다 */
 function NearPopup({ alert, nameOf, playerOf, you }) {
   return (
     <AnimatePresence>
       {alert && (
-        <motion.div key={alert.key} className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center" initial={{ opacity: 0, y: -12, scale: 0.7 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ type: 'spring', stiffness: 360, damping: 20 }}>
+        <motion.div key={alert.key} className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center" initial={{ opacity: 0, y: 12, scale: 0.7 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10 }} transition={{ type: 'spring', stiffness: 360, damping: 20 }}>
           <div className={`flex items-center gap-2 rounded-full px-4 py-1.5 font-black shadow-xl ring-2 ring-white/70 ${alert.pid === you ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
             <Avatar player={playerOf(alert.pid)} size={26} />
             <span className="text-sm sm:text-base">🚨 {alert.names.map((n) => `${n} 비상`).join(' · ')}!</span>
@@ -270,10 +283,10 @@ function Banner({ banner, nameOf, playerOf }) {
   );
 }
 
-function Modal({ children }) {
+function Modal({ children, label }) {
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div role="dialog" aria-modal="true" className="panel max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
+      <motion.div role="dialog" aria-modal="true" aria-label={label} className="panel max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
         {children}
       </motion.div>
     </motion.div>
@@ -337,8 +350,9 @@ function useSettleSteps(res, over, nameOf) {
             <div className="flex items-center justify-between gap-2">
               <span>{nameOf(p.from)} → {nameOf(p.to)}</span>
               {has((e) => e.t === 'total' && e.j === j) && (
-                <motion.b initial={{ scale: 1.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-base text-yellow-300">
-                  {p.total}점 × {won(over.bet)}
+                <motion.b initial={{ scale: 1.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-right text-base text-yellow-300">
+                  {p.mult > 1 && <span className="mr-1 text-xs font-bold text-slate-300">{p.total / p.mult}점 × {p.mult}배 =</span>}
+                  {p.total}점
                 </motion.b>
               )}
             </div>
@@ -351,6 +365,11 @@ function useSettleSteps(res, over, nameOf) {
                 ) : null,
               )}
             </div>
+            {has((e) => e.t === 'total' && e.j === j) && (
+              <div className="mt-1 text-right text-[11px] text-slate-300">
+                × 판돈 {won(over.bet)} = <b className="text-sm text-yellow-300">{won(p.total * over.bet)}원</b>
+              </div>
+            )}
           </motion.div>
         ) : null,
       )}
@@ -369,14 +388,19 @@ function useSettleSteps(res, over, nameOf) {
   return { node, done };
 }
 
-function GameOver({ over, view, nameOf, onClose, userId }) {
+function GameOver({ over, view, nameOf, onClose, userId, carryNext }) {
   const res = over.result;
   const mine = over.payout?.delta?.[userId];
   const settle = useSettleSteps(res, over, nameOf);
   return (
     <Modal>
-      <h2 className="text-2xl font-black text-gold-400">{res.nagari ? '나가리' : res.winner === userId ? '🎉 승리!' : res.winner == null ? '게임 종료' : `${nameOf(res.winner)} 승리`}</h2>
-      {res.nagari && <p className="text-sm text-slate-300">{res.shodang ? '🫴 쇼당 — 모두 수락해서 나가리입니다. ' : '승자 없이 끝났습니다. '}선은 유지됩니다.</p>}
+      <h2 className="text-2xl font-black text-gold-400">{res.nagari ? '나가리' : res.winner === userId ? '🎉 승리!' : res.winner == null ? '게임 종료' : (res.losers ?? []).includes(userId) ? `패배 — ${nameOf(res.winner)} 승리` : `${nameOf(res.winner)} 승리`}</h2>
+      {res.nagari && (
+        <div className="space-y-1 text-sm text-slate-300">
+          <p>{res.shodang ? '🫴 쇼당 — 모두 수락해서 나가리입니다.' : `패를 다 쓸 때까지 아무도 ${view.threshold}점을 내지 못해 승자 없이 끝났습니다.`}</p>
+          <p>선은 그대로 유지됩니다.{carryNext && <b className="ml-1 text-purple-300">다음 판은 나가리 이월로 점수 ×2!</b>}</p>
+        </div>
+      )}
       {res.dokbak != null && <p className="rounded bg-red-700/80 px-3 py-1 text-sm font-black">💥 {nameOf(res.dokbak)}님 독박! 다른 패자의 몫까지 혼자 냅니다</p>}
       {settle.node}
       {res.nagari && (res.payments || []).length > 0 && (
@@ -479,12 +503,107 @@ function GiriOverlay({ cutter, nameOf, playerOf, onDone }) {
   );
 }
 
+/** 최근 행동 기록: 프레임을 따라가며 누가 무엇을 내고·뒤집고·먹었는지 모은다 (최근 3건). 판이 바뀌면 비운다 */
+function useActionLog(view, resetKey) {
+  const [log, setLog] = useState([]);
+  const prev = useRef(null);
+  const key = useRef(resetKey);
+  useEffect(() => {
+    const p = prev.current;
+    prev.current = view;
+    if (key.current !== resetKey || !p) {
+      key.current = resetKey;
+      setLog([]);
+      return;
+    }
+    setLog((cur) => {
+      let next = cur;
+      const startPlay = view.played != null && view.played !== p.played;
+      const startDraw = !startPlay && view.played == null && view.drawn != null && view.drawn !== p.drawn;
+      if (startPlay || startDraw) {
+        next = [...next, { k: `${resetKey}-${Date.now()}-${Math.random()}`, pid: view.actor, played: view.played, drawn: view.drawn, got: [] }].slice(-3);
+      } else if (next.length && view.drawn != null && view.drawn !== p.drawn) {
+        next = [...next.slice(0, -1), { ...next.at(-1), drawn: view.drawn }];
+      }
+      const last = next.at(-1);
+      if (last) {
+        const before = new Set(p.captured[last.pid] ?? []);
+        const fresh = (view.captured[last.pid] ?? []).filter((id) => !before.has(id) && !last.got.includes(id));
+        if (fresh.length) next = [...next.slice(0, -1), { ...last, got: [...last.got, ...fresh] }];
+      }
+      return next;
+    });
+  }, [view, resetKey]);
+  return log;
+}
+
+/** 작은 패 그림 (layoutId 없는 정적 이미지라 본 카드 애니메이션과 섞이지 않는다) */
+function Mini({ id, big = false }) {
+  const sz = big ? 'h-[86px] w-[56px] rounded-md' : 'h-[22px] w-[14px] rounded-sm';
+  if (isBonus(id)) return <span className={`inline-flex items-center justify-center bg-amber-300 font-black text-amber-950 ${sz} ${big ? 'text-lg' : 'text-[7px]'}`} title="보너스 쌍피">★</span>;
+  return <img src={cardImg(id)} alt={cardName(id)} title={cardName(id)} className={`inline-block object-fill ring-1 ring-black/50 ${sz}`} draggable={false} />;
+}
+
+function ActionLog({ log, nameOf, you }) {
+  if (!log.length) return null;
+  return (
+    <div className="pointer-events-none absolute right-2 top-2 z-20 flex flex-col-reverse items-end gap-1 text-[11px]" aria-live="polite" aria-label="최근 행동">
+      {log.map((e, i) => (
+        <motion.div
+          key={e.k}
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: i === log.length - 1 ? 1 : 0.55, x: 0 }}
+          className={`flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 ${i === log.length - 1 ? '' : 'landscape-hide max-sm:hidden'}`}
+        >
+          <b className={`max-w-[84px] truncate ${e.pid === you ? 'text-gold-400' : 'text-slate-100'}`}>{e.pid === you ? '나' : nameOf(e.pid)}</b>
+          {e.played != null && <><Mini id={e.played} /><span className="text-slate-300">냄</span></>}
+          {e.drawn != null && <><Mini id={e.drawn} /><span className="text-slate-300">뒤집음</span></>}
+          {e.got.length > 0 ? <span className="font-bold text-emerald-300">→ {e.got.length}장 먹음</span> : <span className="text-slate-400">→ 못 먹음</span>}
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+/** 앱 안 확인 창 (브라우저 기본 confirm 대신) */
+function ConfirmModal({ title, body, okLabel, danger, onOk, onCancel }) {
+  return (
+    <Modal label={title}>
+      <h3 className="text-xl font-black text-gold-400">{title}</h3>
+      <p className="whitespace-pre-line text-sm text-slate-200">{body}</p>
+      <div className="flex gap-2">
+        <button className={`btn flex-1 ${danger ? 'btn-red' : 'btn-gold'}`} onClick={onOk} {...hk('y Enter', 'Y')}>{okLabel}</button>
+        <button className="btn btn-ghost flex-1" onClick={onCancel} {...hk('n Escape', 'N')}>취소</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** 내 차례 남은 시간 막대 (차례가 시작될 때의 남은 시간을 100% 로 본다) */
+function TurnBar({ left, deadlineAt }) {
+  const total = useRef({ at: null, sec: 0 });
+  if (total.current.at !== deadlineAt) total.current = { at: deadlineAt, sec: Math.max(left ?? 0, 1) };
+  if (left == null) return null;
+  const pct = Math.max(0, Math.min(100, (left / total.current.sec) * 100));
+  return (
+    <div className="absolute inset-x-0 top-0 h-1 overflow-hidden rounded-t-xl bg-black/40" role="progressbar" aria-label="남은 시간" aria-valuenow={left} aria-valuemin={0} aria-valuemax={total.current.sec}>
+      <div className={`h-full transition-[width] duration-300 ease-linear ${left <= 5 ? 'bg-red-500' : 'bg-gold-400'}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+// 터치 기기(마우스 호버 없음)에는 키보드 안내를 빼고 보여준다
+const isTouch = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
+
 export function GameBoard() {
   const { skew, room, user, view, banner, combo, busy, over, startInfo, turnInfo, emit, send, roomChat, dismissOver } = useApp();
   const [shakeFor, setShakeFor] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [help, setHelp] = useState(false);
+  const [confirm, setConfirm] = useState(null); // 앱 안 확인 창 { title, body, okLabel, danger, onOk }
+  const [playedOnce, setPlayedOnce] = useState(false); // 첫 안내를 닫는 기준
   const nearAlert = useNearAlert(view, startInfo?.key);
+  const actionLog = useActionLog(view, startInfo?.key);
   // 판 시작 연출: 선 정하기(밤일낮장) → 기리 순서
   const [intro, setIntro] = useState(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null);
   useEffect(() => setIntro(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null), [startInfo]);
@@ -495,11 +614,12 @@ export function GameBoard() {
     if (gukjinAsked.current !== startInfo?.key) gukjinAsked.current = null;
   }, [startInfo?.key]);
   const left = useCountdown(turnInfo?.deadlineAt, skew);
-  // 차례 배지: 서버가 알려준 지금 차례인 사람에게만 (남은 시간 또는 AI 대행)
-  const timerFor = (pid) => (turnInfo?.userId === pid && view.phase !== 'ended' ? <TurnTimer left={left} auto={turnInfo.auto} /> : null);
+  const touch = useMemo(isTouch, []);
 
   const playerOf = (pid) => room?.players.find((p) => p.id === pid);
   const nameOf = (pid) => room?.players.find((p) => p.id === pid)?.username ?? `플레이어${pid}`;
+  // 차례 배지: 서버가 알려준 지금 차례인 사람에게만 (남은 시간 / 사람 대행 중 / 봇 생각 중)
+  const timerFor = (pid) => (turnInfo?.userId === pid && view.phase !== 'ended' ? <TurnTimer left={left} auto={turnInfo.auto} bot={!!playerOf(pid)?.bot} /> : null);
   const you = user.id;
   const spectator = !room?.players.some((p) => p.id === you); // 관전자: 손패·조작 UI 없음
   const isRest = view.rest === you;
@@ -512,18 +632,18 @@ export function GameBoard() {
     }
   }, [gotGukjin, view.gukjin, you, startInfo?.key]);
   const canPlay = myTurn && view.phase === 'play';
-  // 바닥패를 같은 달끼리 묶는다. 묶음 순서는 처음 나타난 순서를 유지해서 다른 묶음이 생기거나 사라져도 나머지는 제자리에 머문다.
-  const groupOrder = useRef([]);
-  const byMonth = new Map();
-  for (const id of view.floor) {
-    const m = monthOf(id);
-    const key = m > 0 ? m : `b${id}`;
-    if (!byMonth.has(key)) byMonth.set(key, []);
-    byMonth.get(key).push(id);
-  }
-  groupOrder.current = groupOrder.current.filter((k) => byMonth.has(k));
-  for (const k of byMonth.keys()) if (!groupOrder.current.includes(k)) groupOrder.current.push(k);
-  const floorGroups = groupOrder.current.map((month) => ({ month, ids: byMonth.get(month) }));
+  // 바닥패: 같은 달끼리 묶어 월 순서로 놓는다 (보너스패는 맨 뒤). 어느 달이 어디 있는지 늘 같은 순서라 찾기 쉽다.
+  const floorGroups = useMemo(() => {
+    const byMonth = new Map();
+    for (const id of view.floor) {
+      const m = monthOf(id);
+      const key = m > 0 ? m : `b${id}`;
+      if (!byMonth.has(key)) byMonth.set(key, []);
+      byMonth.get(key).push(id);
+    }
+    const rank = (k) => (typeof k === 'number' ? k : 99);
+    return [...byMonth.entries()].sort(([a], [b]) => rank(a) - rank(b)).map(([month, ids]) => ({ month, ids }));
+  }, [view.floor]);
   // 내 차례: 바닥과 짝이 맞는 손패/바닥패는 솟아오르고 테두리로 강조
   const floorMonths = new Set(view.floor.map(monthOf));
   const matchHand = new Set(canPlay ? view.hand.filter((id) => monthOf(id) > 0 && floorMonths.has(monthOf(id))) : []);
@@ -544,40 +664,95 @@ export function GameBoard() {
       const isBomb = hm === 3 && fm === 1;
       if (hm >= 3 && !isBomb && !view.shaken[you].includes(m)) return setShakeFor(id);
     }
+    setPlayedOnce(true);
     emit('game:play', { cardId: id });
   };
+  const shakeAnswer = (shake) => {
+    const id = shakeFor;
+    setShakeFor(null);
+    setPlayedOnce(true);
+    emit('game:play', shake ? { cardId: id, shake: true } : { cardId: id });
+  };
+
+  const leave = () => {
+    if (spectator || view.phase === 'ended') return emit('room:leave');
+    const practice = startInfo?.ranked === false;
+    setConfirm({
+      title: '방에서 나갈까요?',
+      body: practice ? '판 도중에 나가면 기권으로 끝납니다.\n연습 게임이라 머니·전적은 변하지 않아요.' : '판 도중에 나가면 기권패로 처리되어 판돈을 잃습니다.',
+      okLabel: '나가기',
+      danger: !practice,
+      onOk: () => emit('room:leave'),
+    });
+  };
+  const askShodang = () =>
+    setConfirm({
+      title: '🫴 쇼당을 부를까요?',
+      body: '두 상대가 모두 수락하면 이번 판은 나가리입니다.\n한 명이라도 받으면 계속하고, 받은 사람이 독박 책임을 집니다. (한 판에 한 번)',
+      okLabel: '쇼당 부르기',
+      danger: true,
+      onOk: () => emit('game:shodang'),
+    });
 
   let status = '';
   if (view.phase === 'chong') status = `${nameOf(view.chongAsk)}님이 총통 선언을 고민 중…`;
   else if (view.phase === 'gwang') status = `${nameOf(view.gwangAsk)}님이 광팔기를 고민 중…`;
-  else if (view.phase === 'gostop') status = `${nameOf(view.turn)}님이 고/스톱 선택 중…`;
+  else if (view.phase === 'gostop') status = view.turn === you ? '고/스톱을 고르세요' : `${nameOf(view.turn)}님이 고/스톱 선택 중…`;
   else if (view.phase === 'shodang') status = `🫴 ${nameOf(view.shodangBy)}님의 쇼당! ${view.turn === you ? '답해 주세요' : `${nameOf(view.turn)}님이 답하는 중…`}`;
   else if (view.phase === 'ended') status = '게임 종료';
   else if (busy || view.phase === 'busy') status = '진행 중…';
   else if (view.turn === you) status = view.phase === 'choose' ? '먹을 바닥 패를 선택하세요' : canDrawOnly ? '패를 내거나 더미를 뒤집으세요' : '내 차례입니다. 패를 내세요';
   else status = `${nameOf(view.turn)}님의 차례`;
+  const myTurnNow = !spectator && !isRest && view.turn === you && view.phase !== 'ended';
+  const myAction = myTurnNow && !busy && view.phase !== 'busy';
 
   const myScore = view.scores[you];
+  // 결정 창이 떠 있으면 족보/비상 팝업을 띄우지 않는다 (겹쳐서 읽을 수 없음)
+  const asking =
+    shakeFor != null ||
+    confirm != null ||
+    (gukjinAsk && !busy) ||
+    (!busy && ((view.phase === 'gostop' && view.turn === you) || (view.phase === 'chong' && view.chongAsk === you) || (view.phase === 'gwang' && view.gwangAsk === you) || (view.phase === 'shodang' && view.shodangAsk === you)));
+  const nextGo = (view.go[you] ?? 0) + 1;
+  const goEffect = nextGo === 1 ? '+1점' : nextGo === 2 ? '+2점' : `+2점에 점수 ×${2 ** (nextGo - 2)}`;
+  const shakeCards = shakeFor != null ? hand.filter((id) => monthOf(id) === monthOf(shakeFor)) : [];
+
+  const myHeader = (
+    <div className="flex items-center gap-2">
+      <span className="relative inline-flex">
+        <Avatar player={user} size={30} showTitle className={myTurnNow ? '!ring-gold-400' : ''} />
+        <EmoteBubble userId={you} />
+      </span>
+      <EmoteButton />
+      <b className="text-sm">{user.name}</b>
+      {timerFor(you)}
+    </div>
+  );
 
   return (
     <div className="relative mx-auto flex h-full max-w-6xl flex-col gap-2 overflow-hidden p-2">
       {/* 상단 정보 */}
       <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
-        <span className="truncate text-slate-300">
+        <span className="min-w-0 truncate text-slate-300">
           {spectator && <span className="mr-2 rounded-full bg-sky-700 px-2 py-0.5 font-bold text-white">👁️ 관전 중</span>}
           {room.name} · 판돈 {won(room.bet)} · {view.active.length}인{startInfo?.ranked === false && ' · 연습(머니 무변동)'}
         </span>
-        <div className="flex items-center gap-2">
-          {view.sale && <span className="rounded bg-emerald-700 px-2 py-0.5">{nameOf(view.sale.seller)} 광팔기</span>}
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {view.carry > 1 && <span className="hidden rounded bg-purple-700 px-2 py-0.5 sm:inline" title="직전 판이 나가리라 이번 판 점수가 배가 됩니다">나가리 이월 ×{view.carry}</span>}
+          {view.sale && <span className="hidden rounded bg-emerald-700 px-2 py-0.5 sm:inline">{nameOf(view.sale.seller)} 광팔기</span>}
           {view.shodangReceiver != null && <span className="hidden rounded bg-red-700 px-2 py-0.5 sm:inline" title="쇼당을 받은 사람은 지면 독박">{nameOf(view.shodangReceiver)} 쇼당 받음</span>}
-          <button className="btn btn-gold whitespace-nowrap !px-3 !py-1" onClick={() => setHelp((h) => !h)} aria-label="규칙 보기" aria-pressed={help} {...hk('?')}>
-            ❓<span className="hidden sm:inline"> 규칙</span>
+          <button className="btn btn-gold whitespace-nowrap !px-2.5 !py-1 sm:!px-3" onClick={() => setHelp((h) => !h)} aria-label="규칙 보기" aria-pressed={help} {...hk('?')}>
+            <BarLabel icon="❓" text="규칙" />
           </button>
-          {!spectator && <AutoToggle room={room} you={you} emit={emit} />}
-          <SoundToggle />
-          <SettingsButton />
-          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => setChatOpen((o) => !o)} aria-label="채팅" aria-pressed={chatOpen}>💬<span className="hidden sm:inline"> 채팅</span></button>
-          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => window.confirm('나가면 기권패 처리됩니다. 나갈까요?') && emit('room:leave')}>나가기</button>
+          {!spectator && <AutoToggle room={room} you={you} emit={emit} stacked />}
+          <SoundToggle stacked />
+          <SettingsButton stacked />
+          <button className="btn btn-ghost whitespace-nowrap !px-2.5 !py-1 sm:!px-3" onClick={() => setChatOpen((o) => !o)} aria-label="채팅" aria-pressed={chatOpen}>
+            <BarLabel icon="💬" text="채팅" />
+          </button>
+          <button className="btn btn-ghost whitespace-nowrap !px-2.5 !py-1 sm:!px-3" onClick={leave}>
+            <BarLabel icon="🚪" text="나가기" />
+          </button>
         </div>
       </div>
 
@@ -591,12 +766,12 @@ export function GameBoard() {
           ))}
         </div>
 
-        {/* 바닥 */}
+        {/* 바닥 (container 크기에 맞춰 바닥패 크기를 정한다: 높이가 넉넉하면 두 줄, 낮으면 한 줄 기준) */}
         <motion.div
           key={banner && ['ppeok', 'bomb'].includes(banner.kind) ? banner.key : 'floor'}
           animate={banner && ['ppeok', 'bomb'].includes(banner.kind) ? { x: [0, -12, 12, -9, 9, -4, 4, 0] } : { x: 0 }}
           transition={{ duration: 0.5 }}
-          className="relative flex min-h-0 flex-1 items-center justify-center gap-4 rounded-2xl bg-felt-700/70 p-3 ring-1 ring-white/10"
+          className="landscape-tight relative flex min-h-0 flex-1 items-center justify-center gap-4 rounded-2xl bg-felt-700/70 p-3 ring-1 ring-white/10 [container-type:size]"
         >
           <div className="relative flex shrink-0 flex-col items-center gap-1">
             <div className="relative h-[calc(71px*var(--cs,1))] w-[calc(46px*var(--cs,1))] sm:h-[calc(86px*var(--cs,1))] sm:w-[calc(56px*var(--cs,1))]">
@@ -608,14 +783,15 @@ export function GameBoard() {
             </div>
             <span className="text-xs text-slate-300">더미 {view.stockCount}</span>
           </div>
-          <div className="flex max-h-full min-w-0 flex-1 flex-wrap content-center items-center justify-center gap-x-3 gap-y-2 overflow-y-auto py-4 [--cw:calc(40px*var(--cs,1))] sm:[--cw:calc(56px*var(--cs,1))]">
+          <div className="landscape-tight flex max-h-full min-w-0 flex-1 flex-wrap content-center items-center justify-center gap-x-3 gap-y-2 overflow-y-auto py-4 [--cw:min(calc(80px*var(--cs,1)),14cqw,max(27cqh,min(42cqh,40px)))]">
             {floorGroups.map((grp) => {
               const spread = grp.ids.some((id) => choiceOpts.includes(id)); // 고를 때는 펼쳐서 클릭하기 쉽게
               const dx = spread ? 0.9 : 0.34;
               const dy = spread ? 0 : 0.14;
               const n = grp.ids.length;
               return (
-                <div
+                <motion.div
+                  layout
                   key={`g${grp.month}`}
                   className="relative"
                   style={{ width: `calc(var(--cw) * ${1 + (n - 1) * dx})`, height: `calc(var(--cw) * ${1.54 + (n - 1) * dy})` }}
@@ -642,69 +818,70 @@ export function GameBoard() {
                     );
                   })}
                   {n >= 3 && (
-                    <span className="pointer-events-none absolute -right-1 -top-3 z-10 rounded-full bg-red-600 px-1.5 text-[10px] font-black text-white shadow">
+                    <span className="pointer-events-none absolute -left-1 -top-3 z-30 rounded-full bg-red-600 px-1.5 text-[10px] font-black text-white shadow">
                       {n >= 4 ? '4장' : '뻑'}
                     </span>
                   )}
-                </div>
+                </motion.div>
               );
             })}
           </div>
-          {/* 처음 내 차례가 왔을 때 한 번만 */}
-          <div className="pointer-events-none absolute bottom-2 left-1/2 z-30 -translate-x-1/2 [&>*]:pointer-events-auto">
-            <OnceHint id="gostop.play" show={canPlay && !over && !intro}>
-              🔗 표시가 붙은 패는 바닥과 같은 달이라 먹을 수 있어요. 손패를 눌러 내세요! (키보드 1~0)
+          <ActionLog log={actionLog} nameOf={nameOf} you={you} />
+          {/* 처음 내 차례가 왔을 때 한 번만 — 한 장 내면 저절로 닫힌다 */}
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 z-30 flex justify-center [&_button]:pointer-events-auto">
+            <OnceHint id="gostop.play" show={canPlay && !over && !intro} done={playedOnce}>
+              🔗 표시가 붙은 패는 바닥과 같은 달이라 먹을 수 있어요. 손패를 눌러 내세요!{!touch && ' (키보드 1~0)'}
             </OnceHint>
           </div>
           <Banner banner={banner} nameOf={nameOf} playerOf={playerOf} />
-          <ComboPopup combo={combo} nameOf={nameOf} playerOf={playerOf} />
-          <NearPopup alert={nearAlert} nameOf={nameOf} playerOf={playerOf} you={you} />
+          {!asking && <ComboPopup combo={combo} nameOf={nameOf} playerOf={playerOf} />}
+          {!asking && <NearPopup alert={nearAlert} nameOf={nameOf} playerOf={playerOf} you={you} />}
         </motion.div>
 
         {/* 내 영역 (관전자에게는 손패·조작 UI 를 숨긴다) */}
-        {!spectator && (
-          <>
-        <div className={`panel p-2 ${view.turn === you && view.phase !== 'ended' ? 'ring-2 ring-gold-400' : ''}`}>
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="relative inline-flex">
-                <Avatar player={user} size={30} showTitle className={view.turn === you ? '!ring-gold-400' : ''} />
-                <EmoteBubble userId={you} />
-              </span>
-              <EmoteButton />
-              <b className="text-sm">{user.name}</b>
-              {timerFor(you)}
-              {!isRest && <ScoreChip view={view} pid={you} emit={spectator ? null : emit} />}
-              {!isRest && <span className="landscape-hide text-[11px] text-slate-400">/ {view.threshold}점부터 고·스톱</span>}
-            </div>
-            <motion.span key={status} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-sm font-bold text-gold-400">
-              {isRest ? '이번 판은 쉽니다 (관전)' : status}
-            </motion.span>
+        {!spectator && isRest && (
+          <div className="panel flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            {myHeader}
+            <span className="text-sm font-bold text-slate-300">☕ 이번 판은 쉽니다 — 다음 판에 들어갑니다</span>
           </div>
-          <div className="min-h-[42px] landscape-auto">
-            <Captured ids={view.captured[you]} size="sm" />
-          </div>
-          <div className="landscape-tight-hand mt-2 flex items-end justify-center overflow-x-auto pb-1 pt-4 [--hw:calc(54px*var(--cs,1))] sm:[--hw:calc(70px*var(--cs,1))]">
-            {hand.map((id, i) => (
-              <Card key={id} id={id} size="lg" style={{ marginLeft: i ? `min(4px, calc((100vw - 40px - ${hand.length} * var(--hw)) / ${hand.length - 1}))` : 0, zIndex: i }} selected={matchHand.has(id)} hl={matchHand.has(id)} onClick={canPlay ? () => playCard(id) : undefined} dim={choiceOpts.length > 0} hotkey={i < 9 ? String(i + 1) : i === 9 ? '0' : undefined} />
-            ))}
-            {canDrawOnly && (
-              <button className="btn btn-gold ml-3 self-center" onClick={() => emit('game:play', { cardId: null })} {...hk('d')}>
-                더미 뒤집기
-              </button>
-            )}
-            {canPlay && view.shodangOk && (
-              <button
-                className="btn btn-red ml-3 shrink-0 self-center"
-                title="두 상대가 모두 날 수 있는 상황: 둘 다 수락하면 나가리"
-                onClick={() => window.confirm('쇼당을 부를까요?\n두 상대가 모두 수락하면 나가리, 한 명이라도 받으면 계속하고 받은 사람이 독박 책임을 집니다. (한 판에 한 번)') && emit('game:shodang')}
+        )}
+        {!spectator && !isRest && (
+          <div className={`panel relative p-2 transition-shadow ${myTurnNow ? 'ring-2 ring-gold-400 shadow-[0_0_24px_rgba(251,191,36,0.4)]' : ''}`}>
+            {myAction && turnInfo?.userId === you && !turnInfo.auto && <TurnBar left={left} deadlineAt={turnInfo.deadlineAt} />}
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {myHeader}
+                <ScoreChip view={view} pid={you} emit={emit} />
+                <span className="landscape-hide text-[11px] text-slate-400">/ {view.threshold}점부터 고·스톱</span>
+              </div>
+              <motion.span
+                key={status}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`text-sm font-bold ${myAction ? 'rounded-full bg-gold-500 px-3 py-0.5 text-felt-900 shadow' : 'text-gold-400'}`}
               >
-                🫴 쇼당
-              </button>
-            )}
+                {status}
+              </motion.span>
+            </div>
+            <div className="landscape-cap min-h-[42px] [--capw:calc(30px*var(--cs,1))] sm:[--capw:calc(42px*var(--cs,1))]">
+              <Captured ids={view.captured[you]} score={view.scores[you]} />
+            </div>
+            <div className="landscape-tight-hand mt-2 flex items-end justify-center overflow-x-auto pb-1 pt-4 [--hw:calc(54px*var(--cs,1))] sm:[--hw:calc(70px*var(--cs,1))]">
+              {hand.map((id, i) => (
+                <Card key={id} id={id} size="lg" style={{ marginLeft: i ? `min(4px, calc((100vw - 60px - ${hand.length} * var(--hw)) / ${Math.max(1, hand.length - 1)}))` : 0, zIndex: i }} selected={matchHand.has(id)} hl={matchHand.has(id)} onClick={canPlay ? () => playCard(id) : undefined} dim={choiceOpts.length > 0} hotkey={i < 9 ? String(i + 1) : i === 9 ? '0' : undefined} />
+              ))}
+              {canDrawOnly && (
+                <button className="btn btn-gold ml-3 self-center" onClick={() => { setPlayedOnce(true); emit('game:play', { cardId: null }); }} {...hk('d')}>
+                  더미 뒤집기
+                </button>
+              )}
+              {canPlay && view.shodangOk && (
+                <button className="btn btn-red ml-3 shrink-0 self-center" title="두 상대가 모두 날 수 있는 상황: 둘 다 수락하면 나가리" onClick={askShodang}>
+                  🫴 쇼당
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-          </>
         )}
       </LayoutGroup>
 
@@ -718,7 +895,7 @@ export function GameBoard() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {gukjinAsk && <GukjinPrompt key="gukjin" onPick={(mode) => { emit('game:gukjin', { mode }); setGukjinAsk(false); }} onClose={() => setGukjinAsk(false)} />}
+        {gukjinAsk && !busy && <GukjinPrompt key="gukjin" onPick={(mode) => { emit('game:gukjin', { mode }); setGukjinAsk(false); }} onClose={() => setGukjinAsk(false)} />}
       </AnimatePresence>
       <AnimatePresence>{help && <GostopHelp key="help" onClose={() => setHelp(false)} />}</AnimatePresence>
 
@@ -727,8 +904,21 @@ export function GameBoard() {
         {intro === 'first' && startInfo?.flips && !over && <FirstIntro key="intro" info={startInfo} nameOf={nameOf} playerOf={playerOf} onDone={() => setIntro(startInfo.cutter != null ? 'giri' : null)} />}
         {intro === 'giri' && startInfo?.cutter != null && !over && <GiriOverlay key="giri" cutter={startInfo.cutter} nameOf={nameOf} playerOf={playerOf} onDone={() => setIntro(null)} />}
 
+        {confirm && (
+          <ConfirmModal
+            key="confirm"
+            {...confirm}
+            onOk={() => {
+              const f = confirm.onOk;
+              setConfirm(null);
+              f();
+            }}
+            onCancel={() => setConfirm(null)}
+          />
+        )}
+
         {!busy && view.phase === 'shodang' && view.shodangAsk === you && (
-          <Modal key="shodang">
+          <Modal key="shodang" label="쇼당">
             <h3 className="text-xl font-black text-gold-400">🫴 {nameOf(view.shodangBy)}님의 쇼당!</h3>
             <p className="text-sm">두 사람이 모두 날 수 있는 상황입니다. 둘 다 수락하면 이번 판은 나가리가 됩니다.</p>
             <p className="text-xs text-red-300">받아서 계속하면, 쇼당을 부른 사람이 아닌 다른 사람이 났을 때 내가 독박을 씁니다.</p>
@@ -740,7 +930,7 @@ export function GameBoard() {
         )}
 
         {!busy && view.phase === 'chong' && view.chongAsk === you && (
-          <Modal key="chong">
+          <Modal key="chong" label="총통">
             <h3 className="text-xl font-black text-gold-400">총통!</h3>
             <p className="text-sm">첫 패에 같은 달 4장이 있습니다. 지금 선언하면 즉시 승리합니다. 계속하면 이길 때 ×4 입니다.</p>
             <div className="flex gap-2">
@@ -751,10 +941,10 @@ export function GameBoard() {
         )}
 
         {!busy && view.phase === 'gwang' && view.gwangAsk === you && (
-          <Modal key="gwang">
+          <Modal key="gwang" label="광팔기">
             <h3 className="text-xl font-black text-gold-400">광팔기</h3>
             <p className="text-sm">첫 패에 광이 3장 이상입니다. 광을 팔면 광 1장당 2점을 받고 이번 판은 쉽니다.</p>
-            <div className="flex justify-center gap-1">{hand.filter((id) => kindOf(id) === 'gwang').map((id) => <Card key={id} id={id} size="md" />)}</div>
+            <div className="flex justify-center gap-1">{hand.filter((id) => kindOf(id) === 'gwang').map((id) => <Mini key={id} id={id} big />)}</div>
             <div className="flex gap-2">
               <button className="btn btn-gold flex-1" onClick={() => emit('game:sellGwang')} {...hk('y')}>광 팔기</button>
               <button className="btn btn-ghost flex-1" onClick={() => emit('game:passGwang')} {...hk('n')}>그냥 치기</button>
@@ -763,28 +953,34 @@ export function GameBoard() {
         )}
 
         {!busy && view.phase === 'gostop' && view.turn === you && (
-          <Modal key="gostop">
+          <Modal key="gostop" label="고 또는 스톱">
             <h3 className="text-xl font-black text-gold-400">{myScore.total}점 달성!</h3>
-            <p className="text-sm">현재 {view.go[you]}고 · 고를 하면 점수를 더 쌓지만 상대가 먼저 나면 고박 위험이 있습니다.</p>
+            <p className="text-sm">
+              {view.go[you] > 0 && <>지금 <b className="text-red-300">{view.go[you]}고</b> 중입니다. </>}
+              <b className="text-red-300">고</b>를 하면 {nextGo}고({goEffect})로 계속하고, <b className="text-gold-400">스톱</b>하면 지금 점수로 이깁니다.
+            </p>
+            <p className="text-xs text-slate-400">고를 부른 뒤 다른 사람이 먼저 나면 고박(×2)을 씁니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => emit('game:go')} {...hk('g')}>고!</button>
+              <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => emit('game:go')} {...hk('g')}>고! <span className="text-sm font-bold opacity-80">({nextGo}고)</span></button>
               <button className="btn btn-gold flex-1 !py-3 text-lg" onClick={() => emit('game:stop')} {...hk('s')}>스톱</button>
             </div>
           </Modal>
         )}
 
         {shakeFor != null && (
-          <Modal key="shake">
+          <Modal key="shake" label="흔들기">
             <h3 className="text-xl font-black text-gold-400">흔들기</h3>
-            <p className="text-sm">같은 달 패를 3장 가지고 있습니다. 흔들면 점수가 ×2 가 됩니다.</p>
+            <div className="flex justify-center gap-1.5">{shakeCards.map((id) => <Mini key={id} id={id} big />)}</div>
+            <p className="text-sm">{monthOf(shakeFor)}월 패를 3장 가지고 있습니다. 흔들면(상대에게 보여 주면) 이길 때 점수가 ×2 가 됩니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-gold flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id, shake: true }); }} {...hk('y')}>흔들기</button>
-              <button className="btn btn-ghost flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id }); }} {...hk('n')}>그냥 내기</button>
+              <button className="btn btn-gold flex-1" onClick={() => shakeAnswer(true)} {...hk('y')}>흔들기</button>
+              <button className="btn btn-ghost flex-1" onClick={() => shakeAnswer(false)} {...hk('n')}>그냥 내기</button>
+              <button className="btn btn-ghost !px-3" onClick={() => setShakeFor(null)} aria-label="취소" {...hk('Escape', 'Esc')}>✕</button>
             </div>
           </Modal>
         )}
 
-        {over && <GameOver key="over" over={over} view={view} nameOf={nameOf} userId={you} onClose={dismissOver} />}
+        {over && <GameOver key="over" over={over} view={view} nameOf={nameOf} userId={you} carryNext={!!room.opts?.nagariCarry} onClose={dismissOver} />}
       </AnimatePresence>
     </div>
   );

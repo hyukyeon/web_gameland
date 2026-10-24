@@ -67,8 +67,8 @@ export function Card({ id, back = false, size = 'md', onClick, selected, glow, h
       )}
       {hl && (
         <motion.span
-          className="pointer-events-none absolute -inset-[5px] z-10 rounded-lg border-[4px] border-cyan-300"
-          animate={{ boxShadow: ['0 0 6px 1px rgba(34,211,238,0.7)', '0 0 20px 6px rgba(34,211,238,1)', '0 0 6px 1px rgba(34,211,238,0.7)'] }}
+          className="pointer-events-none absolute -inset-[3px] z-10 rounded-lg border-[3px] border-cyan-300"
+          animate={{ boxShadow: ['0 0 3px 0 rgba(34,211,238,0.6)', '0 0 10px 2px rgba(34,211,238,0.9)', '0 0 3px 0 rgba(34,211,238,0.6)'] }}
           transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
         />
       )}

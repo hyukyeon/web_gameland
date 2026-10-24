@@ -16,6 +16,9 @@ describe('카드 기본 정보', () => {
 
   test('획득패 묶기: 광/띠/열끗/피, 먹은 순서 유지', () => {
     expect(groupCaptured([2, 0, 1, 4, 3, 48])).toEqual({ gwang: [0], tti: [1], yeol: [4], pi: [2, 3, 48] });
+    // 국진(32): 기본은 열끗, 쌍피로 셀 때는 피 그룹
+    expect(groupCaptured([32, 34])).toEqual({ gwang: [], tti: [], yeol: [32], pi: [34] });
+    expect(groupCaptured([32, 34], true)).toEqual({ gwang: [], tti: [], yeol: [], pi: [32, 34] });
   });
 
   test('금액 표시', () => {

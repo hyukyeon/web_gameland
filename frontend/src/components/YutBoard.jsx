@@ -185,7 +185,7 @@ function PlayerChip({ pid, view, playerOf, nameOf, you, left, auto }) {
         </div>
         <div className="text-[11px]" style={{ color: t.ring }}>{t.emoji} {t.name}팀</div>
       </div>
-      {isTurn && (left != null || auto) && <TurnTimer left={left} auto={auto} />}
+      {isTurn && (left != null || auto) && <TurnTimer left={left} auto={auto} bot={!!p?.bot} />}
     </div>
   );
 }

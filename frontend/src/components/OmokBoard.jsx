@@ -231,7 +231,7 @@ function PlayerStrip({ pid, color, playerOf, nameOf, isTurn, left, auto, win, yo
           {colName(color)} {color === BLACK && '· 선공'}
         </div>
       </div>
-      {isTurn && (left != null || auto) && <TurnTimer left={left} auto={auto} />}
+      {isTurn && (left != null || auto) && <TurnTimer left={left} auto={auto} bot={!!p?.bot} />}
     </div>
   );
 }

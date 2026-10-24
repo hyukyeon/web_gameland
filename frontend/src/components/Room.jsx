@@ -32,6 +32,9 @@ export function Room() {
   const omok = room.game === 'omok';
   const yut = room.game === 'yut';
   const allReady = room.players.length >= 2 && room.players.every((p) => p.ready);
+  // 방장: 나머지가 모두 준비됐으면 내 '준비' 가 곧 시작이므로 '시작하기' 로 보여준다
+  const othersReady = room.players.length >= 2 && room.players.every((p) => p.id === user.id || p.ready);
+  const readyLabel = me?.ready ? '준비 취소' : isHost && othersReady ? '▶ 준비하고 시작' : '준비';
 
   return (
     <div className="mx-auto flex h-full max-w-5xl flex-col gap-3 p-3">
@@ -56,26 +59,32 @@ export function Room() {
                 <motion.div key={p?.id ?? `empty${i}`} layout className={`flex items-center justify-between rounded-lg p-3 ${p ? 'bg-white/10' : 'border border-dashed border-white/20 text-slate-500'}`}>
                   {p ? (
                     <>
-                      <span className="flex min-w-0 items-center gap-2 font-bold">
+                      <span className="flex min-w-0 items-center gap-2">
                         <Avatar player={p} size={36} showTitle />
-                        <span className="min-w-0 truncate">
-                        {p.id === room.hostId && '👑 '}
-                        {p.username}
-                        {p.bot && ' 🤖'}
-                        {p.bot && p.level && <span className="ml-1 whitespace-nowrap rounded bg-indigo-700 px-1 text-[10px] font-bold" title={`${LEVEL_LABEL[p.level]} · ${STYLE_LABEL[p.style]}`}>{LEVEL_LABEL[p.level]}</span>}
-                        {p.bot && p.style && <span className="ml-1 hidden whitespace-nowrap text-[10px] text-slate-400 lg:inline">{STYLE_LABEL[p.style]}</span>}
-                        {p.id === user.id && <span className="ml-1 text-xs text-gold-400">(나)</span>}
-                        {!p.online && <span className="ml-1 text-xs text-red-400">접속 끊김</span>}
-                        {p.auto && <span className="ml-1 text-xs text-indigo-300">🤖 자동</span>}
+                        <span className="min-w-0 leading-tight">
+                          <span className="block truncate font-bold" title={p.username}>
+                            {p.id === room.hostId && '👑 '}
+                            {p.username}
+                          </span>
+                          {/* 이름이 잘리지 않도록 부가 정보는 둘째 줄에 */}
+                          <span className="flex flex-wrap items-center gap-1 text-[11px] text-slate-300">
+                            {p.bot && <span>🤖 AI</span>}
+                            {p.bot && p.level && <span className="whitespace-nowrap rounded bg-indigo-700 px-1 text-[10px] font-bold text-white" title={`${LEVEL_LABEL[p.level]} · ${STYLE_LABEL[p.style]}`}>{LEVEL_LABEL[p.level]}</span>}
+                            {p.bot && p.style && <span className="whitespace-nowrap text-slate-400">{STYLE_LABEL[p.style]}</span>}
+                            {p.id === user.id && <span className="text-gold-400">(나)</span>}
+                            {!p.bot && p.id !== user.id && p.online && <span className="text-slate-400">사람</span>}
+                            {!p.online && <span className="text-red-400">접속 끊김</span>}
+                            {p.auto && <span className="text-indigo-300">🤖 자동</span>}
+                          </span>
                         </span>
                       </span>
-                      <span className="flex items-center gap-2">
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${p.ready ? 'bg-emerald-600' : 'bg-slate-600'}`}>{p.ready ? '준비 완료' : '대기'}</span>
                         {p.bot && isHost && (
-                          <button className="whitespace-nowrap rounded px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/20" onClick={() => emit('room:removeBot', { botId: p.id })}>
+                          <button className="whitespace-nowrap rounded border border-red-400/40 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/20" onClick={() => emit('room:removeBot', { botId: p.id })} aria-label={`${p.username} 내보내기`}>
                             내보내기
                           </button>
                         )}
-                        <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${p.ready ? 'bg-emerald-600' : 'bg-slate-600'}`}>{p.ready ? '준비 완료' : '대기'}</span>
                       </span>
                     </>
                   ) : (
@@ -93,13 +102,15 @@ export function Room() {
 
           <div className="sticky bottom-0 z-10 -mx-4 flex items-center justify-between gap-3 rounded-lg bg-felt-800 px-4 py-2 ring-1 ring-white/10">
             <p className="text-sm text-slate-300">
-              {room.players.length < 2 ? '상대를 기다리는 중입니다…' : allReady ? '게임을 시작합니다…' : '전원이 준비하면 시작합니다.'}
+              {room.players.length < 2
+                ? isHost && !spectator ? '상대를 기다리거나 AI 봇을 추가하세요.' : '상대를 기다리는 중입니다…'
+                : allReady ? '게임을 시작합니다…' : isHost && othersReady && !me?.ready ? '모두 준비됐어요. 준비하고 시작을 누르세요!' : '전원이 준비하면 시작합니다.'}
             </p>
             {spectator ? (
               <span className="rounded-full bg-sky-700 px-3 py-1 text-sm font-bold">👁️ 관전 중</span>
             ) : (
               <button className={`btn ${me?.ready ? 'btn-ghost' : 'btn-gold'}`} disabled={room.players.length < 2} onClick={() => emit('room:ready')}>
-                {me?.ready ? '준비 취소' : '준비'}
+                {readyLabel}
               </button>
             )}
           </div>

@@ -42,3 +42,25 @@ test('가로 모드(휴대폰)에서도 가로 스크롤 없이 보드가 들어
   if (box) expect(box.y + box.height).toBeLessThanOrEqual(412 + 1);
   expect(errors).toEqual([]);
 });
+
+test('고스톱: 첫 안내는 한 장 내면 닫히고, 나가기는 앱 안 확인 창(취소/나가기)으로 묻는다', async ({ page }) => {
+  const { errors } = await signup(page);
+  await startPractice(page, {});
+  const hand = page.locator('[role="button"][data-hotkey="1"]');
+  await hand.first().waitFor({ timeout: 30_000 });
+  const hint = page.getByText('🔗 표시가 붙은 패는');
+  await expect(hint).toBeVisible();
+  await page.keyboard.press('1');
+  if (await page.getByRole('dialog', { name: '흔들기' }).count()) await page.keyboard.press('n');
+  await expect(hint).toHaveCount(0);
+
+  await page.getByRole('button', { name: /나가기/ }).click();
+  const ask = page.getByRole('dialog', { name: '방에서 나갈까요?' });
+  await expect(ask).toBeVisible();
+  await ask.getByRole('button', { name: '취소' }).click();
+  await expect(ask).toHaveCount(0);
+  await page.getByRole('button', { name: /나가기/ }).click();
+  await ask.getByRole('button', { name: '나가기' }).click();
+  await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});

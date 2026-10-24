@@ -230,7 +230,7 @@ function Seat({ pos, pid, p, view, isMe, nameOf, playerOf, turn, left, auto, win
       {/* 이번 판 액션 / 상태 */}
       <div className="h-4 text-[10px] font-black">
         {isTurn && (left != null || auto) ? (
-          <TurnTimer left={left} auto={auto} className="!rounded-full !px-2" />
+          <TurnTimer left={left} auto={auto} bot={!!playerOf(pid)?.bot} className="!rounded-full !px-2" />
         ) : died ? (
           <span className="rounded-full bg-slate-600 px-2 py-0.5">다이</span>
         ) : p.allIn ? (

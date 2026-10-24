@@ -23,13 +23,13 @@ const KIND_NAME = { gwang: '광', tti: '띠', yeol: '열끗', pi: '피', ssangpi
 /** 화면 낭독기용 카드 이름: "3월 광", "보너스 쌍피" */
 export const cardName = (id) => (isBonus(id) ? '보너스 쌍피' : `${monthOf(id)}월 ${KIND_NAME[kindOf(id)]}`);
 
-/** 획득패를 광 → 띠 → 멍(열끗) → 피 그룹으로 나눈다. 그룹 안에서는 먹은 순서를 유지해 새 패가 항상 맨 뒤에 붙는다(기존 패는 움직이지 않음). 9월 술잔(32)은 열끗으로 표시 */
-export function groupCaptured(ids) {
+/** 획득패를 광 → 띠 → 멍(열끗) → 피 그룹으로 나눈다. 그룹 안에서는 먹은 순서를 유지해 새 패가 항상 맨 뒤에 붙는다(기존 패는 움직이지 않음). 9월 술잔(32)은 열끗, gukjinAsPi 면 피로 표시 */
+export function groupCaptured(ids, gukjinAsPi = false) {
   const g = { gwang: [], tti: [], yeol: [], pi: [] };
   for (const id of ids) {
     const k = kindOf(id);
     if (k === 'gwang') g.gwang.push(id);
-    else if (k === 'yeol') g.yeol.push(id);
+    else if (k === 'yeol' && !(gukjinAsPi && id === 32)) g.yeol.push(id);
     else if (k === 'tti') g.tti.push(id);
     else g.pi.push(id);
   }

@@ -100,6 +100,7 @@ describe('국진 선택', () => {
     expect(g.scoreInfo(A).total).toBeLessThan(auto);
     expect(r.frames[0].scores[A].total).toBe(g.scoreInfo(A).total);
     expect(g.view(B).gukjin[A]).toBe('yeol');
+    expect(g.scoreInfo(A).sepAsPi).toBe(false);
     expect(g.setGukjin(A, 'pi').ok).toBe(true);
     expect(g.scoreInfo(A).total).toBe(auto);
     g.phase = 'ended';

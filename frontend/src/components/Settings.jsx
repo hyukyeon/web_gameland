@@ -5,6 +5,7 @@ import { useSettings, setSettings, SPEEDS, CARD_SIZES, OMOK_THEMES, OMOK_STONES,
 import { canInstall, promptInstall, onInstallChange, isStandalone } from '../pwa.js';
 import { restartTour } from './Tutorial.jsx';
 import { SHORTCUTS } from '../keys.js';
+import { BarLabel } from './TurnTools.jsx';
 
 function Seg({ value, options, onChange, label }) {
   return (
@@ -158,12 +159,12 @@ export function SettingsModal({ onClose }) {
 }
 
 /** 설정 열기 버튼 */
-export function SettingsButton({ className = '' }) {
+export function SettingsButton({ className = '', stacked = false }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className={`btn btn-ghost whitespace-nowrap !px-3 !py-1 ${className}`} title="설정 (음량·속도·카드 크기·진동·단축키)" aria-label="설정" onClick={() => setOpen(true)}>
-        ⚙️<span className="hidden sm:inline"> 설정</span>
+      <button className={`btn btn-ghost whitespace-nowrap !py-1 ${stacked ? '!px-2.5 sm:!px-3' : '!px-3'} ${className}`} title="설정 (음량·속도·카드 크기·진동·단축키)" aria-label="설정" onClick={() => setOpen(true)}>
+        <BarLabel icon="⚙️" text="설정" stacked={stacked} />
       </button>
       <AnimatePresence>{open && <SettingsModal onClose={() => setOpen(false)} />}</AnimatePresence>
     </>
