@@ -9,6 +9,7 @@ import { Loading } from './components/Loading.jsx';
 
 // 게임 화면은 처음 들어갈 때 불러온다 (첫 화면 번들 축소)
 const GameBoard = lazyNamed(() => import('./components/GameBoard.jsx'), 'GameBoard');
+const OmokBoard = lazyNamed(() => import('./components/OmokBoard.jsx'), 'OmokBoard');
 const SeotdaBoard = lazyNamed(() => import('./components/SeotdaBoard.jsx'), 'SeotdaBoard');
 
 function Toast() {
@@ -86,18 +87,19 @@ function RewardModal() {
 }
 
 export default function App() {
-  const { token, user, booting, room, view, seotda } = useApp();
+  const { token, user, booting, room, view, seotda, omok } = useApp();
   // 방에 들어가면 게임 화면 코드를 미리 받아 둔다 (시작 순간 로딩 표시가 뜨지 않게)
   const roomType = room?.game;
   React.useEffect(() => {
     if (!roomType) return;
-    (roomType === 'seotda' ? import('./components/SeotdaBoard.jsx') : import('./components/GameBoard.jsx')).catch(() => {});
+    (roomType === 'seotda' ? import('./components/SeotdaBoard.jsx') : roomType === 'omok' ? import('./components/OmokBoard.jsx') : import('./components/GameBoard.jsx')).catch(() => {});
   }, [roomType]);
   let screen;
   if (booting) screen = <Loading />;
   else if (!token || !user) screen = <Auth />;
   else if (room && view) screen = <GameBoard />;
   else if (room && seotda) screen = <SeotdaBoard />;
+  else if (room && omok) screen = <OmokBoard />;
   else if (room) screen = <Room />;
   else screen = <Lobby />;
   return (

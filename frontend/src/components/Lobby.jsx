@@ -46,10 +46,10 @@ function CreateRoom({ onClose, game = 'gostop' }) {
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="panel w-full max-w-lg space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-black text-gold-400">{game === 'seotda' ? '🃏 섯다 방 만들기' : '방 만들기'}</h2>
+        <h2 className="text-lg font-black text-gold-400">{game === 'seotda' ? '🃏 섯다 방 만들기' : game === 'omok' ? '⚪⚫ 오목 방 만들기' : '방 만들기'}</h2>
         <input className="input" placeholder={`${user.name}의 방`} maxLength={20} value={name} onChange={(e) => setName(e.target.value)} />
         <div>
-          <p className="mb-1 text-xs text-slate-300">{game === 'seotda' ? '참가비(기본 판돈) — 입장하려면 참가비 × 10 이상 보유' : '판돈 (1점당) — 입장하려면 판돈 × 10 이상 보유'}</p>
+          <p className="mb-1 text-xs text-slate-300">{game === 'seotda' || game === 'omok' ? '참가비(진 사람이 이긴 사람에게) — 입장하려면 참가비 × 10 이상 보유' : '판돈 (1점당) — 입장하려면 판돈 × 10 이상 보유'}</p>
           <div className="grid grid-cols-4 gap-2">
             {BETS.map((b) => (
               <button key={b} onClick={() => setBet(b)} className={`btn ${bet === b ? 'btn-gold' : 'btn-ghost'}`}>
@@ -67,6 +67,8 @@ function CreateRoom({ onClose, game = 'gostop' }) {
     </motion.div>
   );
 }
+
+const GAME_TITLE = { gostop: '🎴 고스톱', seotda: '🃏 섯다', omok: '⚪ 오목' };
 
 const PRACTICE_KEY = 'practice.setup';
 const loadPractice = () => {
@@ -89,7 +91,7 @@ function PracticeSetup({ onClose, game }) {
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="panel w-full max-w-md space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="AI 연습 설정">
-        <h2 className="text-lg font-black text-gold-400">🤖 AI 1:1 연습 {game === 'seotda' ? '· 섯다' : '· 고스톱'}</h2>
+        <h2 className="text-lg font-black text-gold-400">🤖 AI 1:1 연습 · {GAME_TITLE[game]?.replace(/^\S+\s/, '')}</h2>
         <div>
           <p className="mb-1 text-xs text-slate-300">난이도</p>
           <div className="grid gap-2">
@@ -102,7 +104,7 @@ function PracticeSetup({ onClose, game }) {
           </div>
         </div>
         <div>
-          <p className="mb-1 text-xs text-slate-300">{game === 'seotda' ? '참가비' : '판돈 (1점당)'} — 연습이라 내 머니는 변하지 않아요</p>
+          <p className="mb-1 text-xs text-slate-300">{game === 'seotda' || game === 'omok' ? '참가비' : '판돈 (1점당)'} — 연습이라 내 머니는 변하지 않아요</p>
           <div className="grid grid-cols-4 gap-2">
             {BETS.map((b) => (
               <button key={b} onClick={() => setCfg((c) => ({ ...c, bet: b }))} aria-pressed={cfg.bet === b} className={`btn ${cfg.bet === b ? 'btn-gold' : 'btn-ghost'}`}>
@@ -221,7 +223,7 @@ export function Lobby() {
       </header>
 
       {/* 게임 선택: 고스톱만 열려 있고 섯다·슬롯머신은 스텁 */}
-      <nav className="grid grid-cols-3 gap-2" aria-label="게임 선택" data-tour="games">
+      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="게임 선택" data-tour="games">
         {GAMES.map((g) => (
           <button
             key={g.id}
@@ -239,12 +241,12 @@ export function Lobby() {
       </nav>
 
       <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[1fr_320px]">
-        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : !['gostop', 'seotda'].includes(game) ? <ComingSoon gameId={game} /> : (
+        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : !['gostop', 'seotda', 'omok'].includes(game) ? <ComingSoon gameId={game} /> : (
         <section className="panel flex min-h-0 min-w-0 flex-col bg-black/65 p-3" data-tour="rooms">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold">{game === 'seotda' ? '🃏 섯다' : '🎴 고스톱'} 방 목록 ({gameRooms.length})</h2>
+            <h2 className="font-bold">{GAME_TITLE[game]} 방 목록 ({gameRooms.length})</h2>
             <div className="flex gap-2">
-              {(game === 'gostop' || game === 'seotda') && (
+              {(game === 'gostop' || game === 'seotda' || game === 'omok') && (
                 <button className="btn btn-ghost whitespace-nowrap" title="AI 와 둘이서 연습 – 머니/전적에 반영되지 않습니다" onClick={() => setPracticing(true)} data-tour="practice">
                   🤖 AI 1:1 연습하기
                 </button>

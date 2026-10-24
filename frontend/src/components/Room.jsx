@@ -29,6 +29,7 @@ export function Room() {
   const me = room.players.find((p) => p.id === user.id);
   const spectator = !me;
   const seotda = room.game === 'seotda';
+  const omok = room.game === 'omok';
   const allReady = room.players.length >= 2 && room.players.every((p) => p.ready);
 
   return (
@@ -37,7 +38,7 @@ export function Room() {
         <div>
           <h1 className="text-lg font-black text-gold-400">{room.name}</h1>
           <p className="text-xs text-slate-300">
-            판돈 {won(room.bet)} · {room.players.length}/{room.max}명 (2~4인) {room.players.length === 3 && '· 3인 맞고'}
+            판돈 {won(room.bet)} · {room.players.length}/{room.max}명 {omok ? '(1:1)' : '(2~4인)'} {!omok && room.players.length === 3 && '· 3인 맞고'}
             {' · '}
             {room.ranked ? '실전 (머니·전적 반영)' : '연습 (머니·전적 무반영)'}
           </p>
@@ -108,7 +109,9 @@ export function Room() {
             </div>
           )}
 
-          {seotda ? (
+          {omok ? (
+            <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">⚪⚫ 오목 · 참가비 {won(room.bet)}원. 15×15 판에서 먼저 5개를 잇는 사람이 이겨요. 첫 판은 무작위로 흑(선공)이 정해지고, 다음 판은 진 사람이 흑을 잡습니다. 흑은 쌍삼(3-3)·장목(6목 이상)이 금지! 우측 상단 ❓에서 규칙을 볼 수 있어요.</p>
+          ) : seotda ? (
             <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">🃏 섯다 · 참가비 {won(room.bet)}원. 한 판마다 패 2장을 받고 베팅합니다. 구사가 나오면 재경기(팟 이월)! 돈이 모자라면 올인(사이드팟), 동점이면 동점자 전원 동의 시 묻고 더블(판돈 2배)로 다시 붙어요. 우측 상단 ❓에서 족보를 볼 수 있어요.</p>
           ) : (
           <div>

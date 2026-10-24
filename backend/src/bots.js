@@ -1,6 +1,7 @@
 import { AiPlayer } from './game/AiPlayer.js';
 import { HeuristicBot } from './game/HeuristicBot.js';
 import { SeotdaBot } from './seotda/SeotdaBot.js';
+import { OmokBot } from './omok/OmokBot.js';
 
 /**
  * AI 봇의 난이도 · 개성(이름/아바타/성향/대사).
@@ -154,9 +155,13 @@ export function makeSeotdaBrain(pid, { level = DEFAULT_LEVEL, style = 'balanced'
   return new SeotdaBot(pid, { rnd, level, boldness: s.bold, bluff: s.bluff });
 }
 
+// ---------- 오목 두뇌 ----------
+export const makeOmokBrain = (pid, { level = DEFAULT_LEVEL, style = 'balanced', rnd } = {}) => new OmokBot({ rnd, level, style });
+
 /** 사람 대신 둘 때(시간 초과·끊김·자동 진행)의 두뇌 */
 export const proxyGostopBrain = (pid) => new HeuristicBot(pid);
 export const proxySeotdaBrain = (pid) => new SeotdaBot(pid, { level: 'hard' });
+export const proxyOmokBrain = () => new OmokBot({ level: 'hard' });
 
 // ---------- 상황 반응 ----------
 const NICE_KINDS = new Set(['bomb', 'sweep', 'special']);

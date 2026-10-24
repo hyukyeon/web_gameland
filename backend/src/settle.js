@@ -174,3 +174,39 @@ export function recordSeotdaPractice({ pids, result, info }) {
   const outcome = Object.fromEntries(pids.map((p) => [p, result.rematch ? 'none' : (result.net?.[p] ?? 0) > 0 ? 'win' : (result.net?.[p] ?? 0) < 0 ? 'lose' : 'draw']));
   return prisma.$transaction((tx) => applySeotdaStats(tx, { pids, result, info, ranked: false, outcome }));
 }
+
+/** 오목 정산: 진 사람이 참가비를 이긴 사람에게 (모자라면 가진 만큼). AI 연습 판은 무변동. 무승부는 변동 없음. */
+export async function settleOmok({ roomName, ante, pids, result, ranked = true }) {
+  if (!ranked) return null;
+  return prisma.$transaction(async (tx) => {
+    const users = await tx.user.findMany({ where: { id: { in: pids } } });
+    const bal = Object.fromEntries(users.map((u) => [u.id, u.money]));
+    const exempt = new Set(users.filter((u) => u.isBot).map((u) => u.id));
+    const delta = Object.fromEntries(pids.map((p) => [p, 0]));
+    const loser = pids.find((p) => (result.net?.[p] ?? 0) < 0);
+    const winner = pids.find((p) => (result.net?.[p] ?? 0) > 0);
+    if (loser != null && winner != null) {
+      const pay = exempt.has(loser) ? ante : Math.min(ante, bal[loser] ?? 0);
+      delta[loser] = -pay;
+      delta[winner] = pay;
+    }
+    const outcome = Object.fromEntries(pids.map((p) => [p, winner == null ? 'draw' : p === winner ? 'win' : 'lose']));
+    const money = {};
+    for (const u of users) {
+      if (u.isBot) continue;
+      const upd = await tx.user.update({ where: { id: u.id }, data: { money: { increment: delta[u.id] ?? 0 } } });
+      money[u.id] = upd.money;
+    }
+    const game = await tx.game.create({
+      data: {
+        roomName: `[오목] ${roomName}`,
+        betPerPt: ante,
+        playerCount: pids.length,
+        nagari: false,
+        detail: `오목${result.kind === 'forfeit' ? ' · 기권' : result.kind === 'full' ? ' · 무승부' : ''}`,
+        results: { create: users.filter((u) => !u.isBot).map((u) => ({ userId: u.id, outcome: outcome[u.id], moneyDelta: delta[u.id] ?? 0 })) },
+      },
+    });
+    return { delta, money, gameId: game.id, unlocked: {} };
+  });
+}
