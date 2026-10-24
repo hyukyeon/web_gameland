@@ -10,6 +10,8 @@ import { PICS_DIR, FRONTEND_DIST, UPLOAD_DIR } from './config.js';
 
 export function createServer() {
   const app = express();
+  // 리버스 프록시(nginx 등) 뒤에서 돌릴 때 실제 클라이언트 IP 로 레이트 리밋하려면 TRUST_PROXY=1
+  if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
   app.use(cors());
   app.use(express.json());
 

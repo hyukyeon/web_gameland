@@ -2,7 +2,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export const PORT = Number(process.env.PORT) || 4000;
-export const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+export const IS_PROD = process.env.NODE_ENV === 'production';
+const DEV_SECRET = 'dev-secret-change-me';
+// 운영(NODE_ENV=production)에서는 JWT_SECRET 환경변수가 반드시 있어야 한다. 없거나 기본값이면 서버를 띄우지 않는다.
+if (IS_PROD && (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEV_SECRET || process.env.JWT_SECRET.length < 16))
+  throw new Error('운영 모드에서는 16자 이상의 JWT_SECRET 환경변수가 필요합니다. (예: JWT_SECRET=$(openssl rand -hex 32))');
+export const JWT_SECRET = process.env.JWT_SECRET || DEV_SECRET;
+export const USING_DEV_SECRET = !process.env.JWT_SECRET;
 export const INITIAL_MONEY = 100000;
 export const PICS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../pics');
 export const FRONTEND_DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/dist');
@@ -25,3 +31,9 @@ export const GOSTOP_TURN_MS = Number(process.env.GOSTOP_TURN_MS) || 30000;
 export const AUTO_AFTER_TIMEOUTS = 2;
 // 섯다 동점 '묻고 더블' 동의 대기 시간
 export const SEOTDA_VOTE_MS = Number(process.env.SEOTDA_VOTE_MS) || 15000;
+// 로그인/회원가입 레이트 리밋 (IP 기준). 0 이면 끔 — 테스트(NODE_ENV=test)에서는 기본으로 끈다.
+const envNum = (k, d) => (process.env[k] != null ? Number(process.env[k]) : d);
+export const LOGIN_RATE_MAX = envNum('LOGIN_RATE_MAX', process.env.NODE_ENV === 'test' ? 0 : 10); // 1분에 10번
+export const LOGIN_RATE_WINDOW_MS = 60 * 1000;
+export const REGISTER_RATE_MAX = envNum('REGISTER_RATE_MAX', process.env.NODE_ENV === 'test' ? 0 : 5); // 1시간에 5개
+export const REGISTER_RATE_WINDOW_MS = 60 * 60 * 1000;

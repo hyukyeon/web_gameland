@@ -5,7 +5,11 @@ import { prisma } from './db.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { JWT_SECRET, INITIAL_MONEY, BCRYPT_ROUNDS, AVATAR_DIR } from './config.js';
+import {
+  JWT_SECRET, INITIAL_MONEY, BCRYPT_ROUNDS, AVATAR_DIR,
+  LOGIN_RATE_MAX, LOGIN_RATE_WINDOW_MS, REGISTER_RATE_MAX, REGISTER_RATE_WINDOW_MS,
+} from './config.js';
+import { rateLimit } from './rateLimit.js';
 import { bus } from './events.js';
 import { ACHIEVEMENTS, achievementById, parseAchievements, titleText, computeStats } from './stats.js';
 
@@ -62,7 +66,11 @@ export function requireAuth(req, res, next) {
 
 const router = Router();
 
-router.post('/register', async (req, res) => {
+// 비밀번호 대입·계정 대량 생성 방지 (IP 기준)
+export const loginLimiter = rateLimit({ windowMs: LOGIN_RATE_WINDOW_MS, max: LOGIN_RATE_MAX, message: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.' });
+export const registerLimiter = rateLimit({ windowMs: REGISTER_RATE_WINDOW_MS, max: REGISTER_RATE_MAX, message: '가입 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' });
+
+router.post('/register', registerLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || !/^[A-Za-z0-9가-힣_]{2,12}$/.test(username))
     return res.status(400).json({ error: '아이디는 2~12자의 한글/영문/숫자/_ 만 가능합니다.' });
@@ -77,7 +85,7 @@ router.post('/register', async (req, res) => {
   return res.json({ token: signToken(user), user: publicUser(user) });
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   const user = typeof username === 'string' ? await prisma.user.findUnique({ where: { username } }) : null;
   if (!user || user.isBot || typeof password !== 'string' || !(await bcrypt.compare(password, user.passwordHash)))
