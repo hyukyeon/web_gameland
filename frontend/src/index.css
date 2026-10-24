@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply bg-felt-900 text-slate-100 antialiased; margin: 0; }
+
+@layer components {
+.btn { @apply rounded-lg px-4 py-2 text-sm font-bold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed; }
+.btn-gold { @apply bg-gold-500 text-felt-900 hover:bg-gold-400; }
+.btn-ghost { @apply bg-white/10 text-slate-100 hover:bg-white/20; }
+.btn-red { @apply bg-red-600 text-white hover:bg-red-500; }
+.panel { @apply rounded-xl bg-black/30 ring-1 ring-white/10; }
+.input { @apply w-full rounded-lg bg-black/40 px-3 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-gold-400; }
+
+}
+
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.10) 0 4px, transparent 4px 8px),
+    linear-gradient(135deg, #b91c1c, #7f1d1d);
+  border: 2px solid #fde68a;
+}
+.card-bonus {
+  background: radial-gradient(circle at 50% 35%, #fde68a, #f59e0b 60%, #b45309);
+  border: 2px solid #78350f;
+}

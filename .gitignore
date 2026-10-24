@@ -1,0 +1,8 @@
+node_modules/
+frontend/dist/
+backend/prisma/dev.db*
+backend/uploads/
+.env
+*.log
+test-results/
+playwright-report/

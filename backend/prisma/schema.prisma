@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int          @id @default(autoincrement())
+  username     String       @unique
+  passwordHash String
+  // 다른 사람에게 보이는 이름(없으면 username), 업로드한 아바타 파일명(없으면 기본 이미지)
+  nickname     String?      @unique
+  avatar       String?
+  money        Int          @default(100000)
+  // 고스톱 전적 (섯다는 sdWins/sdLosses)
+  wins         Int          @default(0)
+  losses       Int          @default(0)
+  // AI 봇 더미 계정: 머니 증감/전적 집계에서 제외된다 (자본금 무한 취급)
+  isBot        Boolean      @default(false)
+  // 포커 스타일 스탯: 실전(ranked) 판만 누적. botWins 는 AI 상대 승리(연습 포함)
+  statGames      Int        @default(0)
+  goCount        Int        @default(0)
+  stopCount      Int        @default(0)
+  bbuckCount     Int        @default(0)
+  bombCount      Int        @default(0)
+  shakeCount     Int        @default(0)
+  scoreSum       Int        @default(0)
+  pibakLosses    Int        @default(0)
+  gwangWins      Int        @default(0)
+  botWins        Int        @default(0)
+  // 섯다 전적/스탯 (고스톱 wins/losses 와 분리, 실전만 누적)
+  sdGames        Int        @default(0)
+  sdWins         Int        @default(0)
+  sdLosses       Int        @default(0)
+  sdDies         Int        @default(0)
+  sdFoldWins     Int        @default(0)
+  sdBluffWins    Int        @default(0)
+  sdTtaengWins   Int        @default(0)
+  sdGwangWins    Int        @default(0)
+  sdAllinWins    Int        @default(0)
+  sdDoubleWins   Int        @default(0)
+  sdBiggestPot   Int        @default(0)
+  sdBestPower    Int        @default(0)
+  sdBestHand     String?
+  // 업적(JSON 문자열 배열: SQLite 는 배열 컬럼이 없다)과 대표 칭호(업적 id)
+  achievements   String     @default("[]")
+  title          String?
+  // 출석 체크(KST 하루 1회 10,000원), 개평(하루 3회, 잔액 10,000원 이하일 때 30,000원)
+  lastLoginAt    DateTime?
+  gaepyeongDate  String?
+  gaepyeongCount Int        @default(0)
+  // 슬롯머신 일일 한도(KST 자정 기준 초기화)
+  dailySlotSpent   Int       @default(0)
+  lastSlotPlayedAt DateTime?
+  createdAt    DateTime     @default(now())
+  results      GameResult[]
+}
+
+// 한 판의 기록. ranked=false(AI 1:1 연습 등)는 기록하지 않으므로 이 테이블에는 실전 판만 쌓인다.
+model Game {
+  id          Int          @id @default(autoincrement())
+  roomName    String
+  betPerPt    Int
+  playerCount Int
+  nagari      Boolean      @default(false)
+  detail      String       @default("")
+  createdAt   DateTime     @default(now())
+  results     GameResult[]
+}
+
+// 판마다 참가자별 결과. outcome: win | lose | draw | none(광팔기 등 승패 없이 돈만 오간 경우)
+model GameResult {
+  id         Int    @id @default(autoincrement())
+  gameId     Int
+  userId     Int
+  outcome    String
+  moneyDelta Int
+  game       Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user       User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([gameId])
+}

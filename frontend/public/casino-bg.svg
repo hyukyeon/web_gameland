@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#5a1230"/>
+      <stop offset="0.55" stop-color="#2a0b1f"/>
+      <stop offset="1" stop-color="#0b0610"/>
+    </radialGradient>
+    <radialGradient id="spot" cx="50%" cy="0%" r="70%">
+      <stop offset="0" stop-color="#ffe9a8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffe9a8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="felt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f7a50"/>
+      <stop offset="1" stop-color="#0d3a27"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7a4a22"/>
+      <stop offset="1" stop-color="#3b2010"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#c8891a"/>
+    </linearGradient>
+    <filter id="blur6"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="blur14"><feGaussianBlur stdDeviation="14"/></filter>
+    <g id="chip">
+      <ellipse cx="0" cy="0" rx="46" ry="16" fill="#00000055" transform="translate(0 12)"/>
+      <rect x="-46" y="-10" width="92" height="20" fill="currentColor"/>
+      <ellipse cx="0" cy="10" rx="46" ry="16" fill="currentColor"/>
+      <ellipse cx="0" cy="-10" rx="46" ry="16" fill="currentColor"/>
+      <ellipse cx="0" cy="-10" rx="46" ry="16" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="10 8" opacity="0.85"/>
+      <ellipse cx="0" cy="-10" rx="26" ry="9" fill="none" stroke="#ffffffaa" stroke-width="2"/>
+    </g>
+    <g id="card">
+      <rect x="-60" y="-84" width="120" height="168" rx="12" fill="#fffdf6" stroke="#d8cfb8" stroke-width="2"/>
+      <path d="M0 -30c-22 -28 -48 -2 -26 22 8 9 20 18 26 28 6 -10 18 -19 26 -28 22 -24 -4 -50 -26 -22z" fill="#c8102e"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- 천장 조명 -->
+  <polygon points="520,0 1080,0 1320,640 280,640" fill="url(#spot)" opacity="0.55"/>
+  <g fill="#ffe9a8">
+    <ellipse cx="800" cy="6" rx="150" ry="14" opacity="0.9"/>
+    <ellipse cx="300" cy="6" rx="90" ry="10" opacity="0.6"/>
+    <ellipse cx="1300" cy="6" rx="90" ry="10" opacity="0.6"/>
+  </g>
+
+  <!-- 보케 불빛 -->
+  <g filter="url(#blur6)">
+    <circle cx="140" cy="150" r="46" fill="#ff3d81" opacity="0.35"/>
+    <circle cx="260" cy="270" r="30" fill="#ffd166" opacity="0.4"/>
+    <circle cx="1450" cy="130" r="54" fill="#7c4dff" opacity="0.35"/>
+    <circle cx="1330" cy="300" r="34" fill="#ff3d81" opacity="0.35"/>
+    <circle cx="90" cy="430" r="26" fill="#00e5ff" opacity="0.3"/>
+    <circle cx="1520" cy="470" r="28" fill="#ffd166" opacity="0.4"/>
+    <circle cx="620" cy="120" r="22" fill="#ffd166" opacity="0.45"/>
+    <circle cx="990" cy="170" r="26" fill="#ff3d81" opacity="0.3"/>
+  </g>
+
+  <!-- 네온 링 / 하트·스페이드 심볼 -->
+  <g fill="none" stroke-linecap="round">
+    <circle cx="210" cy="250" r="120" stroke="#ff2e88" stroke-width="6" opacity="0.55"/>
+    <circle cx="210" cy="250" r="120" stroke="#ff2e88" stroke-width="16" opacity="0.18" filter="url(#blur6)"/>
+    <circle cx="1400" cy="230" r="150" stroke="#2ee6ff" stroke-width="6" opacity="0.5"/>
+    <circle cx="1400" cy="230" r="150" stroke="#2ee6ff" stroke-width="18" opacity="0.16" filter="url(#blur6)"/>
+  </g>
+  <g font-family="serif" font-weight="700" text-anchor="middle" opacity="0.55">
+    <text x="210" y="290" font-size="130" fill="#ff5fa2">♥</text>
+    <text x="1400" y="285" font-size="150" fill="#6ff0ff">♠</text>
+    <text x="760" y="215" font-size="90" fill="#ffd166" opacity="0.5">♦</text>
+    <text x="1000" y="250" font-size="70" fill="#ffd166" opacity="0.4">♣</text>
+  </g>
+
+  <!-- 별빛 -->
+  <g fill="#fff" opacity="0.7">
+    <circle cx="420" cy="90" r="2.4"/><circle cx="560" cy="210" r="1.8"/><circle cx="1180" cy="80" r="2.4"/>
+    <circle cx="1240" cy="360" r="1.8"/><circle cx="360" cy="400" r="2"/><circle cx="880" cy="60" r="2"/>
+    <circle cx="1480" cy="360" r="2"/><circle cx="60" cy="300" r="1.8"/>
+  </g>
+
+  <!-- 바닥 쪽 카지노 테이블 -->
+  <ellipse cx="800" cy="900" rx="1000" ry="260" fill="url(#rail)"/>
+  <ellipse cx="800" cy="910" rx="940" ry="228" fill="url(#felt)"/>
+  <ellipse cx="800" cy="910" rx="940" ry="228" fill="none" stroke="#ffd16655" stroke-width="3"/>
+  <ellipse cx="800" cy="905" rx="700" ry="150" fill="none" stroke="#ffffff22" stroke-width="2" stroke-dasharray="14 12"/>
+
+  <!-- 칩 더미 -->
+  <g>
+    <g color="#d62839" transform="translate(300 790)"><use href="#chip"/><use href="#chip" y="-18"/><use href="#chip" y="-36"/><use href="#chip" y="-54"/></g>
+    <g color="#1d3557" transform="translate(380 820)"><use href="#chip"/><use href="#chip" y="-18"/><use href="#chip" y="-36"/></g>
+    <g color="#2a9d8f" transform="translate(245 835)"><use href="#chip"/><use href="#chip" y="-18"/></g>
+    <g color="#222" transform="translate(1260 800)"><use href="#chip"/><use href="#chip" y="-18"/><use href="#chip" y="-36"/><use href="#chip" y="-54"/><use href="#chip" y="-72"/></g>
+    <g color="#e9c46a" transform="translate(1180 835)"><use href="#chip"/><use href="#chip" y="-18"/><use href="#chip" y="-36"/></g>
+    <g color="#d62839" transform="translate(1345 840)"><use href="#chip"/><use href="#chip" y="-18"/></g>
+  </g>
+
+  <!-- 부채꼴 카드 -->
+  <g transform="translate(800 790)">
+    <g transform="rotate(-24) translate(-30 0)"><use href="#card"/></g>
+    <g transform="rotate(-8)"><use href="#card"/></g>
+    <g transform="rotate(10) translate(24 0)"><use href="#card"/></g>
+    <g transform="rotate(26) translate(60 6)"><use href="#card"/></g>
+  </g>
+
+  <!-- 주사위 -->
+  <g transform="translate(560 800) rotate(-14)">
+    <rect x="-34" y="-34" width="68" height="68" rx="12" fill="#fffdf6" stroke="#cfc7b0" stroke-width="2"/>
+    <g fill="#c8102e"><circle cx="-16" cy="-16" r="6"/><circle cx="16" cy="-16" r="6"/><circle cx="0" cy="0" r="6"/><circle cx="-16" cy="16" r="6"/><circle cx="16" cy="16" r="6"/></g>
+  </g>
+  <g transform="translate(1030 830) rotate(18)">
+    <rect x="-30" y="-30" width="60" height="60" rx="11" fill="#fffdf6" stroke="#cfc7b0" stroke-width="2"/>
+    <g fill="#111"><circle cx="-14" cy="-14" r="5.5"/><circle cx="14" cy="14" r="5.5"/><circle cx="0" cy="0" r="5.5"/></g>
+  </g>
+
+  <!-- 가장자리 비네트 -->
+  <rect width="1600" height="900" fill="#000" opacity="0.18"/>
+</svg>

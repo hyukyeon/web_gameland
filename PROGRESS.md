@@ -1,0 +1,168 @@
+# PROGRESS.md
+
+> 새 세션 시작 시 이 파일을 가장 먼저 읽고, `claude.md`의 Phase 순서를 따른다.
+
+## 현재 상태: **Phase 4 완료 + 심야 일괄 작업(Task 1~6) 완료 — 대기** (16 suites / 1448 tests 통과)
+
+## 구현 완료
+### Phase 1 – 코어 룰 엔진 + Jest (완료)
+- `backend/src/game/cards.js` 카드 48장 테이블 (id=(row-1)*8+(col-1), 이미지 `pics/row-R-column-C.png`), `shuffle`.
+- `backend/src/game/score.js` `computeScore`, `loserPiCount`, `WIN_THRESHOLD=7`.
+- `backend/src/game/GostopGame.js` 2인 맞고 엔진 (뻑/자뻑/따닥/쪽/싹쓸이/폭탄/흔들기/고/스톱/나가리/기권, 광박·피박·멍박·고박).
+- 테스트: `cd backend && npm test` (Jest, ESM: `NODE_OPTIONS=--experimental-vm-modules`) → **4 suites / 1288 tests 전부 통과** (`test/multi.test.js`: 3·4인·광팔기·보너스, `test/rules.test.js`: wingboardgame 규칙 보강분).
+  - `test/score.test.js`, `test/engine.test.js` (딜링 100시드, 특수상황, 고/스톱, 정산, 종료, 정보 은닉, 300판 무작위 불변식).
+  - 보조: `npm run test:sim`(3000판 시뮬), `npm run test:e2e`(소켓 E2E; 서버 불필요 여부는 파일 참고).
+
+### Phase 2 – DB / 인증 / 소켓 서버 (완료, 6 suites / 1320 tests 통과)
+- **DB (Prisma 6 + SQLite, `DATABASE_URL`, `backend/.env`)**: `User(money, wins, losses, isBot)`, `Game(roomName, betPerPt, playerCount, nagari, detail)`, `GameResult(gameId, userId, outcome win|lose|draw|none, moneyDelta)`.
+  기존 `GameRecord` 는 마이그레이션 `20261024000000_multiplayer` 에서 새 테이블로 이관 후 삭제(데이터 보존).
+- **`src/settle.js`**: `computeTransfers`(순수) + `settleGame`(`$transaction`) — `result.payments` 기반 다자 정산.
+  패자 잔고 한도(비율 분배·1원 단위 보존, 음수 없음), `isBot` 계정은 한도 없이 지불/잔고·전적 불변, `ranked=false` 면 DB 무변경. 광팔기·뻑 지불도 동일 처리.
+  승패는 `outcomesOf`(winner/losers/forfeit 기준; 고박 대납으로 payments.from 이 몰려도 losers 기준).
+- **`src/sockets.js`**: 방 최대 4인(≥2인 전원 ready 시 시작), 방 옵션 `{bonus, ppeokPay, chongtong, ttibak, nagariCarry}`(`room:create`/`room:options`),
+  4인 쉬는 사람 교대(`pickRest`, 직전에 쉰 사람 연속 제외), 첫 판 선은 `decideFirst`(밤일낮장) 후 이긴 사람이 선, 나가리면 선 유지 + `nagariCarry` 시 다음 판 ×2.
+  이벤트: `game:play/choose/go/stop`, `game:sellGwang/passGwang`, `game:chongtong/passChongtong`; 서버→`game:start`(view, first, flips, ranked) / `game:frames` / `game:over`({result, payout, ranked}) / `me:update` / `room:state` / `lobby:rooms`.
+  `isRankedRoom(room)`: 사람이 2명 이상이면 실전, 아니면 연습(비정산) — Phase 4 에서 규칙 확정 (아래 Phase 4 섹션).
+  이탈/재접속 30초 유예 후 기권 정산, 중복 로그인 킥, 채팅 속도 제한, `room:ready` 중복 시작 방지.
+- `src/app.js`(`createServer`) / `src/index.js`(listen): `/pics` 정적 서빙, `/api/auth/*`(register/login/me/records/ranking — 랭킹은 봇 제외).
+- 테스트: `npm test`(Jest, 임시 SQLite + `prisma migrate deploy`로 격리) — `settle.test.js`(정산/롤백/봇 면제/연습 무영향), `sockets.test.js`(REST·방·2/3/4인 끝까지 진행·머니 보존·정보 은닉·4인 교대·이탈·옵션 ON 다판·부정 액션 거부). 옛 `test/e2e.js` 는 대체되어 삭제.
+
+### Phase 3 – 프론트엔드 (완료)
+- `frontend/` Vite 8 + React 19 + Tailwind 3 + Framer Motion. 실행: `cd frontend && npm run dev`(5173, `/api`·`/pics`·`/socket.io` 를 4000 으로 프록시, `BACKEND_URL` 로 변경 가능) / `npm run build` → `frontend/dist` 를 백엔드(`createServer`)가 그대로 서빙.
+- `src/store.jsx`(AppProvider): 토큰(localStorage)·자동 로그인·소켓 연결, 로비/방/채팅 상태, **프레임 재생기**: `game:frames` 를 큐에 넣고 프레임마다 650ms(배너 프레임 1100ms) 간격으로 `view` 교체, 재생 중 `busy` 로 입력 잠금, `game:over` 는 재생이 끝난 뒤 표시, `game:start` 마다 epoch 증가로 이전 재생 취소(재접속 대응). `emit()` 은 ack 오류를 토스트로 표시.
+- 화면: `Auth`(로그인/가입) → `Lobby`(방 목록·방 만들기+옵션·로비 채팅·랭킹/내 전적) → `Room`(2~4인 슬롯, 준비, 방장 옵션 변경, 채팅) → `GameBoard`. App 은 `room && view` 면 게임판, `room` 만이면 대기실.
+- `GameBoard`: 상대 N명(손패 뒷면·획득패·점수/고/흔들기/폭탄/족보 칩, 쉬는 사람 흐리게), 바닥+더미, 내 획득패(광/열끗/띠/피 그룹 겹침)·손패. phase 별 UI: 내 차례 패 내기 / 더미 뒤집기(손패 없음·폭탄 더미) / 바닥 선택(`choice.options` 하이라이트) / 고·스톱 모달 / 광팔기·총통 모달 / 흔들기 확인 모달(같은 달 3장, 폭탄은 제외) / 선 정하기(밤일낮장) 연출 / 정산 모달(`game:over.payout`; 연습이면 "머니 무반영" 안내).
+- **애니메이션**: `Card` 가 `layoutId="c{id}"` 를 써서 손패→바닥→획득패 이동이 공유 레이아웃 전환으로 날아감, 더미에서 뒤집힌 패는 flip-in. 배너(`frame.banner`)는 종류별 색/스케일 팝: 뻑·폭탄은 바닥 흔들림+화면 플래시, 싹쓸이 플래시, 따닥/쪽/고/흔들기/보너스/광팔기 등.
+- 카드 이미지는 `/pics/row-R-column-C.png`, **뒷면·보너스패(48/49)는 CSS**(`.card-back`, `.card-bonus`).
+- 검증: `vite build` 성공. Playwright(headless chromium, 스크래치패드 스크립트)로 실제 서버+빌드 산출물에 2명(옵션 없음)·4명(옵션 전부 ON) 가입→방 생성/입장→준비→자동 플레이→정산 모달까지 끝까지 진행, 콘솔/페이지 에러 0, 머니 증감 정상 확인. 프론트 단위 테스트는 없음.
+
+### Phase 1 확장 – 2~4인 / 광팔기 / 보너스
+- `new GostopGame(pids(2~4), {firstPlayer, rnd, bonus=false, rest})`.
+  - 2인: 10장·바닥8·7점 / 3인: 7장·바닥6·3점 / 4인: 4명 착석, `rest` 1명은 쉬고 3명이 3인과 동일 진행.
+  - 쪽·따닥·뻑먹기·싹쓸이·폭탄의 피 갈취는 **상대 각각에게서** 가져옴. 턴은 `active` 순환, 패 없는 사람은 건너뜀.
+- **광팔기**(3·4인): 첫 패에 광 ≥3장인 사람에게 phase `gwang`에서 차례로 `sellGwang(pid)` / `passGwang(pid)`.
+  4인 → `rest`가 패를 인수해 그 자리에서 치고 판 사람이 rest가 됨. 3인 → 패는 `dead`, 2인전(7점)으로 전환.
+  (wingboardgame 규칙 반영) 판 패는 더미에 섞이고, 4인은 쉬던 사람이 새로 7장 받아 대신 침, 3인은 2인전(7점). 판 사람은 **광 1장당 2점**을 선·인수자를 뺀 플레이어에게서 수령 (`kind:'sale'`, 승패·나가리 무관).
+- **보너스 카드**(옵션 `bonus:true`): id 48·49, 쌍피(피 2장) 취급, 이미지 없음 → UI에서 CSS 렌더 필요.
+  손패에서 내면 즉시 획득 + 더미 1장을 손으로 받고 턴 계속, 더미에서 나오면 획득 후 한 장 더 뒤집음. 피 갈취 대상 아님.
+- **결과 구조**: `result.payments = [{kind:'game'|'forfeit'|'sale', from, to, total(점수), mult, tags}]`.
+  박(광·피·멍·고)은 패자별 개별 적용, 고/흔들기/폭탄 배수는 공통. 2인전은 기존 `winner/loser/total/tags` 필드 유지.
+- 뷰: `opps, active, rest, handCounts, threshold, sale, gwangAsk` 추가 (`oppId/oppHandCount`는 2인 호환용).
+- **wingboardgame 규칙 보강** (https://www.wingboardgame.com/2022/01/go-stop.html):
+  - 따닥·쪽·싹쓸이는 **마지막 패(더미+모든 손패 소진)에서 불인정**.
+  - 고박(3인 이상): 고를 부른 패자는 ×2 이고 **다른 패자의 몫까지 대납**(`고박 대납`).
+  - 옵션 `ppeokPay`: 첫뻑 3점, 연뻑 6점(상대 각각), 삼연뻑은 즉시 종료(뻑 낸 사람 3점 승) — 점수 환산(칩=점)은 페이지 표현이 모호해 해석함.
+  - 옵션 `chongtong`: 첫 패 동월 4장 보유자가 `callChongtong`(즉시 종료, 상대 각 3점) / `passChongtong`(계속, 이기면 ×4). 꺼두면 기존처럼 재딜.
+  - 옵션 `carry`(나가리 이월 배수, 보통 2) — 방 로직이 직전 판이 나가리(`result.nagari`)면 전달. 옵션 `ttibak`(띠 5장+ ×2).
+  - `GostopGame.decideFirst(pids,{night})` 밤일낮장 선 정하기.
+  - 미구현(페이지가 모호/비표준): 독박, 쇼당, 3피 표시 카드(덱에 없음), 기리(컷) 연출, 4~6인 '장' 단계(페이지도 불명), 연속 쉬기 금지(방 로직 몫).
+- 점수 규칙 점검 완료: 광(3/비광3=2/4/5), 열끗5장+, 고도리5, 홍·청·초단 각3, 띠5장+, 피10장+, 쌍피2장, 9월 술잔 자동선택 — 모두 테스트로 확인.
+
+### Phase 4 – AI 봇 + 경제 예외 (완료, 8 suites / 1350 tests 통과)
+- `backend/src/game/AiPlayer.js`: 룰 기반 AI. `decide(view)` 는 사람과 똑같은 뷰(`viewOf`)만 보고 `{type,...}` 하나 반환(치팅 없음).
+  - 카드 선택: 폭탄 > 뻑 더미 먹기 > 바닥 매칭(매칭된 카드 가치 합) > 매칭 없으면 가치 낮은 패 버리기. 가치 광6 > 쌍피/보너스4 > 열끗3 > 띠2.5 > 피1 (비광 −1.5, 고도리 +1, 술잔 3.5). 보너스패는 즉시, 좋은 매칭이 없고 동월 3장이면 흔들기, 폭탄 더미가 남았고 낼 매칭이 없으면 더미 뒤집기.
+  - 바닥 선택(choose): 가치 높은 패. 총통: 선언. 광팔기: 비광이 섞인 3광(2점)일 때만 판매.
+  - 고/스톱: 엔진이 임계값(2인 7점/3인·4인 3점)에 도달해야 물어보므로 "3점 이상" 은 이 임계값으로 해석. 남은 손패<3, 이미 2고, 상대 점수≥임계값−1, 상대가 고를 불렀음(고박 위험), 내 점수≥임계값+4 중 하나면 스톱, 아니면 고.
+- **봇 계정**: `User.isBot=true` 더미(`AI봇1..N`, `passwordHash='!'`). 로그인·소켓 접속 불가, `AI봇` 접두 아이디 가입 차단(`BOT_PREFIX`), 랭킹 제외. `acquireBot` 이 비어 있는 봇을 방에 예약(동시 요청도 겹치지 않음). 사람이 모두 나가면 방 삭제 + 봇 반환.
+- **서버 연동(`sockets.js`)**: 봇 차례(`chong/gwang/play/choose/gostop`)를 `scheduleBot` 이 감지해 클라 프레임 재생 시간(프레임 650ms, 배너 1100ms)+0.7초 뒤 `runBot` 이 대신 둠. AI 행동이 엔진에서 거부되면 `botFallback`(안전한 행동)으로 대체해 판이 멈추지 않음. `BOT_DELAY_SCALE` 환경변수로 지연 배율 조정(테스트는 0). 봇은 항상 준비 상태(`resetReady`), 방장은 사람 중에서 승계.
+- **이벤트**: `room:practice`(로비 'AI 1:1 연습하기' – 봇과 단둘, 준비 없이 바로 시작), `room:addBot` / `room:removeBot`(방장, 대기 중). 프론트: Lobby 버튼, Room 빈 자리의 'AI 봇 추가'·봇 '내보내기', 방 헤더에 실전/연습 표시.
+- **경제 규칙(`isRankedRoom`)**: **사람이 2명 이상이면 실전**, 사람 1명뿐(AI 1:1, 사람 1+AI 여럿)이면 연습. → AI 1:1 은 머니·전적·Game 기록 전부 무변동(`ranked=false` 면 `settleGame` 이 DB 를 건드리지 않음), 유저2+AI1 은 실전(유저 머니·전적 정상 증감), 봇 행은 항상 불변(자본 무한 취급, 잔고 한도 없이 지불). 사람1+AI2 를 연습으로 둔 것은 무한 자본 봇에서 머니를 캐는 어뷰징 방지(설계 결정).
+- 테스트: `test/ai.test.js`(판단 단위 22개 + AI끼리 2/3/4인 각 150판 자체 대국, 엔진 거부 0), `test/bot.test.js`(봇 계정 보호, 연습 3판 무변동, 유저2+AI1 실전 머니·전적, 4인 유저2+AI2, 이탈 정산, 봇 중복 방지). `npm test` 전체 통과.
+- 검증: Playwright 로 빌드 산출물에 접속해 'AI 1:1 연습하기' → 실제 지연으로 봇과 한 판 끝까지(2회), 콘솔 에러 0, 연습 안내 문구 확인. 프론트 단위 테스트는 없음.
+
+### Phase 4 이후 추가 작업
+- **UI/연출**: 짝 맞는 패 강조(시안 맥동 테두리+솟음), 바닥패 같은 달 묶음 겹침(뻑 표시, 묶음 순서는 처음 나온 순서 유지·flex-wrap), 획득패 광→띠→멍→피 그룹을 먹은 순서로 컴팩트하게 겹침, 손패는 좁은 화면에서 자동 겹침, 낸 패 slam 애니메이션, 대기실 준비 버튼 위치 수정(모바일에서 옵션에 가려지던 문제).
+- **사운드**: `frontend/src/sound.js` Web Audio 합성 효과음(상황별) + 배경음악 `frontend/public/bgm.mp3`(Intro.mp3). 효과음/배경음 각각 토글(localStorage `gostop.sound`/`gostop.bgm`).
+- **프로필**: `User.nickname`(유니크, 비우면 아이디)·`User.avatar`(파일명). REST `PUT /api/auth/profile`, `POST|DELETE /api/auth/avatar`(raw 이미지, 2MB, 매직바이트로 PNG/JPG/GIF/WEBP 검증, SVG 거부, `UPLOAD_DIR`(기본 `backend/uploads`) 저장, `/uploads` 서빙+nosniff). `events.js` 버스로 소켓 서버에 알려 방 상태·채팅 이름 즉시 갱신. 화면 이름은 `user.name`(닉네임||아이디), 방 상태 `players[].username` 은 표시 이름 + `avatar`. 프론트: 로비 '내 정보' 탭(사진 256px 정사각 크롭 후 업로드), 방/게임판/팝업 배너/선 정하기에 아바타 표시, 기본 이미지 `public/default-avatar.svg`, 봇 `public/bot-avatar.svg`. 테스트 `test/profile.test.js`(9 suites / 1355 tests 통과). 마이그레이션 `20261025000000_profile`.
+
+- **재접속/상태 복구**: 방·게임 상태는 원래부터 `userId` 키(`userRoom`/`rooms`)로 보관(`socket.id` 비의존). `disconnect` 시 즉시 퇴장하지 않고 `RECONNECT_GRACE_MS`(기본 60초, 환경변수)만큼 자리 유지 → 초과 시 `leaveRoom`(진행 중이면 기권 정산). 끊김/복귀를 방에 알림(`room:chat` 시스템 메시지, `player:offline|online`, `room:state.players[].offlineAt`). 재접속하면 타이머 해제 후 `SYNC_BOARD_STATE`({room, chat, view(내 손패·바닥·턴·점수), over(끊긴 사이 끝난 판 결과 1회), ranked, serverTime}) 전송. 클라가 `sync` 를 보내도 동일 응답(방이 없으면 room=null). 기존 버그 수정: 판 종료 시 `clearTimers` 가 끊긴 유저의 유예 타이머까지 지우던 것을 봇 타이머만 지우도록. 프론트: `SYNC_BOARD_STATE` 로 room/chat/view 를 통째로 덮어쓰고 재생 큐 폐기, 탭 복귀(visibilitychange/pageshow/online) 시 끊겨 있으면 `connect()`·연결돼 있으면 `sync`, 끊김 동안 전체 반투명 오버레이("서버와 연결이 끊겼습니다. 재접속 중…", 0.8초 이상일 때), 게임판 상단에 상대 끊김 카운트다운. 폴백은 기권 처리(봇 대행은 미구현). 테스트 `test/reconnect.test.js`(10 suites / 1359 tests), Playwright+TCP 프록시로 끊김→오버레이→복구 E2E 확인.
+
+### 심야 일괄 작업 (Batch) — 진행 기록
+- **Task 1 완료 – HeuristicBot**: `backend/src/game/HeuristicBot.js`(카운팅+EV)로 소켓 서버의 봇을 교체(`AiPlayer` 는 `cardValue` 공유용·비교 기준으로 유지). 한 판 동안 봇 인스턴스(`room.brains`)를 유지하며 `observe(view)` 로 본 패(내 손패+바닥+전 플레이어 획득패)를 누적 → 남은 패(더미+상대 손패) 월별 수량·가치. 패 EV = 확정 매칭 + 더미 매칭 확률(Odds) − 상대에게 줄 방어 리스크 − 뻑 위험(폭탄/뻑먹기/따닥/흔들기 보너스 유지). 고/스톱 `goEV`: stop(현재 점수) 대비 go = (1−상대역전확률)(현재+1+추가득점기대) − 역전확률×손실(고박 1.5배), 족보 임박도(광·고도리·홍/청/초단·피)로 득점 속도 추정, 남은 패<2·3고 이상은 스톱. 테스트 `test/heuristic.test.js`(카운팅·EV·고스톱·2/3/4인 150판 무거부, 결정 최대 지연 <10ms·평균 <1ms). 2인 AiPlayer 상대 2000판 시뮬: 승 1018:982, 득점 17783:15401(우위는 근소). MCTS 등 무작위 시뮬레이션은 쓰지 않음.
+
+- **Task 2 완료 – 타짜 이모트**: 서버 `SEND_EMOTE {text}` → 허용 목록(`EMOTES`: 묻고 더블로 가!/싸늘하다.../동작그만 밑장빼기냐?/아수라발발타) 밖은 거부, 방 안 플레이어만, 채팅 속도 제한 공유 → 같은 방 전원(관전자 포함)에게 `BROADCAST_EMOTE {userId,name,text,ts}`. 프론트: `Emote.jsx` — `EmoteButton`(프로필 영역 😎, 목록 팝업), `EmoteBubble`(아바타 위/아래에서 spring 으로 통통 튀어나오고 3초 뒤 opacity 0 으로 exit), 스토어 `emotes` 상태.
+- **Task 3 완료 – 관전 모드**: `room:spectate {roomId}`(방이 가득 찼거나 진행 중일 때만, 최대 8명). 관전자는 `room.spectators` 에만 존재 — `players`/`pids`/턴 순서/정산에 절대 들어가지 않음. 입장 시 `SYNC_BOARD_STATE`(role:'spectator', 손패 `[]`, 상대 손패 비노출) 후 `game:frames`/`game:start`/`game:over` 를 함께 수신. `game:*`·`room:ready`·`SEND_EMOTE`·방 설정 등 모든 조작은 서버에서 차단. 관전자 퇴장은 기권/정산 무영향, 플레이어가 전원 나가면 관전자도 `room:left` 로 로비 복귀. 방 상태 `room:state.spectators[]`, 로비 요약 `spectators` 수. 프론트: 로비 '👁️ 관전하기' 버튼, 게임판 손패·조작 영역 숨김 + '👁️ 관전 중' 배지, 대기실 관전 표시. 테스트(bot.test.js '관전' 3종).
+- **Task 4~6 완료 – 스탯/업적/출석·개평 (백엔드)** — 마이그레이션 `20261026000000_stats_achievements_daily`:
+  - `User` 신규 컬럼: `statGames, goCount, stopCount, bbuckCount, bombCount, shakeCount, scoreSum, pibakLosses, gwangWins, botWins`(Int), `achievements`(JSON 문자열 배열, SQLite 는 배열 컬럼 없음), `title`(대표 칭호 업적 id), `lastLoginAt`, `gaepyeongDate`(KST YYYY-MM-DD), `gaepyeongCount`.
+  - 엔진 `result.stats[pid]`({active,go,stop,ppeok,ppeokMax,bomb,shake,score,gwang}) / `result.baks[loser]`(박 이름 목록) 추가.
+  - `src/stats.js`: `ACHIEVEMENTS`(뻑의 제왕·광신도·무소유·타짜·첫 승리·폭탄마·고 중독), `applyGameStats`(실전 판만 카운터 증가, botWins 는 연습 포함, 새 업적 판정·JSON 저장·첫 업적 자동 대표 칭호), `computeStats`, `recordPractice`(연습 판 전용). `settleGame` 트랜잭션 안에서 호출, 결과에 `unlocked` 포함 → 소켓 `achievement:unlocked {achievements[]}` 로 개인 통지.
+  - REST: `GET /api/auth/stats`(승률·고 성향 goRate=고/(고+스톱)·평균 점수·피박 회피율=1−피박패/패·뻑/폭탄 비율), `GET /api/auth/achievements`, `PUT /api/auth/title`(달성한 것만), `POST /api/auth/checkin`(KST 하루 첫 호출 +10,000원, 조건부 updateMany 로 동시 호출 1회만), `POST /api/auth/gaepyeong`(잔액 ≤10,000 & 오늘 <3회 → +30,000원, 트랜잭션+조건부 갱신). `publicUser` 에 `achievements, title, titleText, gaepyeongLeft, canGaepyeong` 추가, 방 플레이어에 `title`(표시 문자열).
+  - 테스트 `test/progress.test.js`(출석 경계·동시성, 개평 10,000 경계·3회 제한·날짜 초기화·연타, 스탯 누적/연습 무영향, 업적 4종·칭호 선택).
+
+- **Task 4~6 프론트엔드**: `Profile.jsx`(내 정보 탭: 사진·닉네임 + `StatsPanel` = 방사형 `RadarChart`(승률/고 성향/평균 점수/피박 회피/폭탄·흔들기, 의존성 없는 SVG)+진행 바+뻑/폭탄/흔들기/AI승 카드 + 업적 목록·대표 칭호 선택), `Avatar.jsx` 의 `showTitle`(대표 칭호를 아바타 위에 항상 표시: 로비 헤더·대기실·게임판), 로비 헤더 '🧧 개평 받기 (n/3)' 버튼(`canGaepyeong` 일 때만 활성), `App.jsx` 의 `RewardModal`(출석 보너스·개평·업적 달성 안내). 스토어: 세션당 1회 `POST /checkin`, `claimGaepyeong`, `reward`, `achievement:unlocked` 수신. Playwright 로 출석 모달→개평→프로필 차트→이모트 말풍선(3초 후 소멸)→관전자 화면을 실제 서버에서 확인(에러 0).
+
+### 심야 일괄 작업 최종 요약 (스키마 · 소켓 이벤트 · 컴포넌트)
+- **DB 스키마(User 추가 컬럼)**: 프로필 `nickname`(unique), `avatar` / 스탯 `statGames, goCount, stopCount, bbuckCount, bombCount, shakeCount, scoreSum, pibakLosses, gwangWins, botWins` / `achievements`(JSON 배열 문자열), `title` / `lastLoginAt`, `gaepyeongDate`, `gaepyeongCount`. 마이그레이션: `20261025000000_profile`, `20261026000000_stats_achievements_daily`.
+- **소켓 이벤트(추가분)** — 서버→클라: `SYNC_BOARD_STATE`(role 포함), `BROADCAST_EMOTE`, `achievement:unlocked`, `player:offline|online`, `room:state.spectators[]` / 클라→서버: `SEND_EMOTE {text}`, `room:spectate {roomId}`, `sync`, `room:practice`, `room:addBot`, `room:removeBot`.
+- **REST(추가분)**: `PUT /api/auth/profile`, `POST|DELETE /api/auth/avatar`, `GET /stats`, `GET /achievements`, `PUT /title`, `POST /checkin`, `POST /gaepyeong`.
+- **프론트 컴포넌트**: `Auth, Lobby(관전하기/개평/AI 연습), Room(관전 표시), GameBoard(관전자 모드·OfflineNotice·Banner 아바타), Card, Avatar, Emote(EmoteButton/EmoteBubble), Profile(ProfilePanel/StatsPanel/RadarChart), SoundToggle, Chat` + `App` 의 `DisconnectOverlay`, `RewardModal`.
+- **주의/한계**: 업적·스탯 규칙 해석 — 광신도는 '3광 이상으로 이긴 승리 누적 5회', 무소유의 '멍따'는 멍박, 고 성향=고/(고+스톱), 평균 점수=실전 판당 최종 점수, 피박 회피율=1−(피박 패/패). 스탯·전적·머니는 실전만, AI 상대 승리(botWins)·업적(뻑의 제왕·무소유 등 판 단위 조건)은 연습 판에서도 반영. 관전은 최대 8명·가득 찼거나 진행 중인 방만(요청서의 3인 기준은 이 앱의 4인 방 기준으로 해석). HeuristicBot 은 AiPlayer 대비 근소 우위(2000판 승률 50.9%, 득점 +15%).
+
+### 로비 개편 + 슬롯머신
+- **강원랜드 로비**: 로그인/로비 제목을 "🎰 강원랜드"로, 카지노 SVG 배경(`frontend/public/casino-bg.svg`, 직접 그린 일러스트). 게임 선택 탭(`frontend/src/games.js` 레지스트리: 고스톱 ready / 섯다 스텁 `ComingSoon.jsx` / 슬롯머신). 새 게임은 `ready` 를 true 로 바꾸고 `Lobby.jsx` 의 화면 매핑에 연결.
+- **슬롯머신**: 마이그레이션 `20261027000000_slot_limit`(`User.dailySlotSpent`, `lastSlotPlayedAt`). `src/slotMath.js`(확률 모델 `SLOT_TIERS`, `spinSlot(rng)`, `evaluateSymbols`, `theoreticalRtp`), `src/slot.js`: `GET /api/slot/status`, `POST /api/slot/spin`(500원 차감+당첨금 지급 한 트랜잭션, KST 날짜 바뀌면 한도 초기화, 오늘 베팅합 +500 > 10,000 이면 403 "오늘 슬롯머신 한도를 모두 소진했습니다.", 유저별 직렬 큐 + 조건부 갱신으로 연타 안전). 응답 `{resultSymbols, payout, tier, bet, user, slot:{spent,limit,left}}`. 결과는 서버 `Math.random`. 소켓 푸시 없음(연출 전에 머니가 미리 바뀌지 않게, 화면은 연출 후 반영).
+  - ⚠ **요청서의 확률표는 RTP 155%**(1%×40+4%×10+15%×3+30%×1) 라서 목표 95% 와 모순 → 배당 금액은 유지하고 확률만 0.5%/2%/8%/31%(꽝 58.5%)로 조정해 이론 RTP 정확히 95.0%. '소박'은 "아무 심볼 2개 일치"로 해석. 표를 원래대로 되돌리려면 `SLOT_TIERS` 만 수정.
+  - 검증(`test/slot.test.js`): 200k 스핀 결과/당첨금 일치, 1,000,000회 RTP 95.19%(티어 빈도 ±0.002 이내), 10,000회 시드 실행 96.7%(표본 작아 ±3% 흔들림이 정상), 한도 20회/403, 날짜 초기화, 머니 부족, 30연타 동시성.
+  - 프론트 `SlotMachine.jsx`: 3릴(Framer Motion 모션값 하나로 transform 만 갱신, 스핀 중 블러), 왼쪽부터 0.5초 간격 ease-out 정지(탁·탁·탁 효과음), 잭팟/대박 = 전체 플래시+파티클+동전 비, 꽝 = 릴 회색조, 한도 바, 배당표. 심볼: 똥광(40)·삼팔광땡(8+28)·멧돼지(24)·홍단(1)·껍데기(2).
+  - 성능: 헤드리스 크롬 측정에서 `backdrop-blur` 가 프레임을 60→34fps 로 떨어뜨림 → 로비/슬롯 패널의 backdrop-blur 제거(불투명도로 대체) 후 스핀 59.7fps, 잭팟+동전 비 59.5fps.
+
+### ✅ 화투 섯다 모드 추가 완료 (무중단 1~4 페이즈 완료)
+- **Phase 1 – 족보 엔진** `backend/src/seotda/rules.js`: 20장 덱(`SEOTDA_DECK` = 1~10월 각 2장, 고스톱과 같은 카드 id 라 ./pics 재사용), `evaluateHand`(삼팔광땡 > 18·13광땡 > 장땡~삥땡 > 알리·독사·구삥·장삥·장사·세륙 > 갑오 > 8끗~1끗 > 망통, 점수 1000~500), `compareHands`(특수 족보 상성·구사 재경기·무승부 공동 승자).
+  - 암행어사(4열+7열): 상대에 13/18광땡이 있으면 승(950점), 38광땡은 못 잡음, 아니면 1끗. 땡잡이(3광+7열): 상대에 1~9땡이 있으면 승(809.5점), 장땡·광땡은 못 잡음, 아니면 망통. 구사(4+9): 멍텅구리구사(4열+9열)는 상대 최고 패가 9땡 이하, 일반 구사는 알리 이하이면 재경기, 아니면 3끗.
+  - 해석/단순화: '멍텅구리 구사'는 4월 열끗+9월 열끗(32, 국진)으로 정의. 땡잡이/암행어사의 승리 효과는 해당 족보보다 약한 모든 패를 이기는 점수로 환산(3인 이상에서 비이행성 방지). 동점은 팟을 나눠 가짐(나머지는 앉은 순서 앞 승자).
+- **Phase 2 – 베팅/소켓** `SeotdaGame.js`: 참가비(=방 판돈) 징수 → 2장 비공개 분배 → 선부터 시계 방향 베팅. 액션 `die/call(0이면 체크)/half(콜+팟 50%)/bbing(선의 첫 베팅만, 기본 판돈)/ddadang(앞사람 베팅 ×2)`, 레이즈 후 생존자 재응답, 한도=생존자 중 최소 보유금(사이드팟 없음), 전원 콜/한 명만 남으면 종료. 구사 재경기는 팟 이월 + 참가비 재징수 후 round+1. 이탈/연결 끊김/제한시간(40초, 체크 가능하면 체크·아니면 다이)은 다이 처리. 방 `type:'seotda'`(`room:create {game:'seotda'}`), 이벤트: 클→서 `seotda:act {action}`; 서→클 `seotda:start`, `seotda:state`, `TURN_START`, `SHOW_DOWN`, `seotda:over {result,payout}`; `SYNC_BOARD_STATE.seotda` 로 재접속 복구, 관전자 지원(패 비공개). 정산 `settleSeotda`(Prisma 트랜잭션, 순증감 `net` 반영, 잔액 부족 시 비율 조정, wins/losses·Game 기록 `[섯다]`). 섯다엔 AI 봇 없음.
+- **Phase 3 – UI**: `SeotdaBoard.jsx`(녹색 펠트 타원 테이블, 중앙 POT, 좌석별 아바타·보유금·카드 2장(뒷면)·마지막 액션·남은 시간, 내 패 face-up + 족보 이름, 내 차례에 [다이][콜/체크][하프][삥][따당] 버튼, 쇼다운 뒤집기, 재경기 배너, 결과 모달), `JokboHelp.jsx`(우상단 ❓ 족보 보기: 아코디언 + 특수 족보 상성표, 배경 반투명 `pointer-events-none` 이라 게임을 멈추지 않고 내 패·베팅 버튼을 그대로 사용 가능). 로비 '섯다' 탭에서 방 목록/방 만들기(옵션 없음), 대기실은 섯다 안내.
+- **Phase 4 – 테스트**: `test/seotda.rules.test.js`(20: 덱, 190조합 평가, 암행어사가 13/18광땡 잡음, 38광땡이 암행어사 무시, 땡잡이가 8땡 잡음/장땡·광땡 못 잡음, 구사 재경기 조건), `test/seotda.game.test.js`(15: 삥/콜/하프/따당/다이/한도/재경기 이월/이탈/타임아웃/1000판 무작위 제로섬), `test/seotda.socket.test.js`(7: 패 비공개, SHOW_DOWN, 정산 제로섬, 재경기, 관전, 이탈, 재접속, 무작위 3인). 패 고정은 Fisher-Yates 역산으로 난수열을 조작.
+- 참고: 이 프로젝트는 git 저장소가 아니라 '커밋'은 하지 않았다(저장소 초기화도 하지 않음). 서버(4000)는 새 코드로 재시작했다.
+
+## 주요 아키텍처 결정
+- 서버 권위: 액션은 `{ok, frames}` 반환, frames = 단계별 스냅샷(클라가 순서 재생해 애니메이션). `GostopGame.viewOf(snapshot, viewer, pids)`로 상대 손패 은닉.
+- phase: `play | choose | gostop | busy | ended`. 바닥패 선택은 `ctx.choice`.
+- 규칙: 7점 이상 고/스톱, 1고+1·2고+2·3고부터 ×2^(n-2), 박/흔들기/폭탄 각 ×2, 소진 시 나가리.
+- 지급액 = min(점수×판돈, 패자 보유금), 제로섬.
+- 프론트엔드: Phase 3 섹션 참고 (Vite+React+Tailwind+Framer Motion, 프레임 큐 재생 방식).
+
+## 해결되지 않은 이슈 / 주의
+- (해결) 보너스패/뒷면은 CSS 로 구현. 단, 보너스 카드 렌더는 육안 검증하지 못함(자동 플레이에서 보너스가 안 나왔을 수 있음).
+- 차례 제한시간(타이머)·자동 플레이는 **미구현**(Phase 4 에서도 제외, 클라 카운트다운 UI 필요): 접속은 했지만 가만히 있는 유저는 판을 멈출 수 있음(연결 끊김만 30초 후 기권). 필요하면 `AiPlayer` 를 재사용해 시간 초과 시 대행하면 됨.
+- (해결) AI 봇·버튼·봇 계정은 Phase 4 에서 구현. 남은 개선: 봇이 상대 패 추적/확률 계산은 하지 않는 단순 룰 기반.
+- 쇼당·독박 등 미구현 규칙은 Phase 1 확장 항목 참고. `JWT_SECRET` 은 운영 시 반드시 환경변수로 지정.
+- 실행: `cd backend && npx prisma migrate deploy && npm start` (PORT 4000). 서버 프로세스는 띄워 두지 않음.
+
+## Next Step
+프로젝트 4단계 모두 완료. 선택 개선 사항:
+- 차례 타이머 + 시간 초과 시 `AiPlayer` 자동 대행(클라 카운트다운 UI 포함), 쇼당·독박 등 미구현 규칙, 보너스 카드 육안 확인, 프론트 단위 테스트.
+- 배포: `cd frontend && npm run build` → `cd backend && npx prisma migrate deploy && JWT_SECRET=<비밀값> PORT=4000 npm start` (백엔드가 `frontend/dist` 와 `/pics` 서빙). DB 경로는 `backend/.env` 의 `DATABASE_URL`.
+
+
+## 🤖 섯다 AI 모드 추가
+- `backend/src/seotda/SeotdaBot.js`: 내 패 + 남은 18장으로 상대 2장 조합 전수 비교(승률) → 팟 오즈와 비교해 콜/다이, 매우 강하면 따당·하프, 약 6% 허세. 봇마다 성향(boldness) 약간 다름. 항상 `options` 에 맞는 합법 행동만 반환(실패 시 체크/다이 폴백).
+- `sockets.js`: 섯다 방에서도 `room:addBot`(대기방 AI 추가) / `room:practice {game:'seotda'}`(로비 'AI 1:1 연습') 가능. 봇 차례엔 0.9~2초 생각 후 행동(`seotda-bot` 타이머, `BOT_DELAY_SCALE` 적용).
+- 경제: 고스톱과 동일. 사람 1명 + 봇 = 연습(머니/전적/게임 기록 무변동, 사람은 최소 `ante*50` 칩 보장), 사람 2명 이상 + 봇 = 실전(봇은 가상 잔액 1천만으로 무한 자본, 봇 잔고·전적·기록 제외).
+- 프론트: 섯다 탭에도 'AI 1:1 연습하기', 대기방 'AI 봇 추가', 봇 칩은 ∞ 표시, 연습 결과창에 안내 문구.
+- 테스트: `seotda.bot.test.js` 5개 추가(판단·합법성 시뮬레이션·연습/실전 정산). 전체 17 suites 통과.
+
+## 🎊 족보 완성 팝업/효과음
+- 고스톱에서 홍단·청단·초단·고도리·N광이 새로 완성되면 상단 팝업(누가, +점수)과 `combo` 효과음 재생. 프레임 간 `scores[pid].detail` 비교로 클라이언트에서 감지(`store.jsx newCombos`), 재접속/새로고침 직후엔 이전 프레임이 없어 울리지 않음. 여러 개가 동시에 완성되면 1.5초 간격으로 순서대로 표시.
+
+## ✅ TODO #1~#6 구현 (2026-10-24)
+- **#1 고스톱 차례 제한 시간**: `GOSTOP_TURN_MS`(기본 30초, 프레임 재생·시작 연출 시간만큼 마감을 늦춤). 사람 차례마다 `TURN_START {game, userId, deadlineAt, auto}` 방송 → 초과 시 HeuristicBot 이 그 사람 대신 한 수. 연속 `AUTO_AFTER_TIMEOUTS`(2)회 초과하면 자동 진행 전환(`players[].auto`), 상단 '🤖 자동' 버튼으로 본인이 켜고 끔(`room:auto {on}`). 직접 두면 초과 횟수 초기화, 판이 끝나면 자동 진행 해제. 섯다도 같은 규칙(초과 시 체크/다이, 2회면 자동 진행).
+- **#2 끊김 시 AI 대행**: 연결이 끊긴 사람 차례는 즉시 AI 가 대신 둔다(고스톱 HeuristicBot / 섯다 SeotdaBot). 유예(60초)가 지나도 판 중에는 기권시키지 않고 `leaveAfterGame` 표시 → 판이 끝나면 퇴장. 유예 안에 돌아오면 자동 진행 해제 후 바로 넘겨받음(`resumeTurn`). 직접 '나가기'는 여전히 기권/다이.
+- **#3 게임별 전적·랭킹**: `User.wins/losses` = 고스톱 전용, 섯다는 `sdWins/sdLosses/sdGames` + 스탯(`sdDies, sdFoldWins, sdBluffWins(3끗 이하로 상대 전원 다이), sdTtaengWins, sdGwangWins, sdAllinWins, sdDoubleWins, sdBiggestPot, sdBestPower/sdBestHand`). 마이그레이션 `20261028000000_seotda_stats` 가 기존 `[섯다]` 기록의 승패를 고스톱 전적에서 빼서 옮김(실 DB 적용 전 백업: `/tmp/claude-1000/dev.db.bak-before-seotda-stats`). 섯다 업적 8종(섯다 첫 승·광땡 메이커·장군·허세왕·암행어사 출두·땡잡이·묻고 더블로 가·올인 승부사, `game:'seotda'`). `GET /api/auth/ranking?game=money|gostop|seotda`. 로비 랭킹 탭(머니/고스톱/섯다), 헤더 전적 분리, 내 정보 스탯·업적을 게임별 탭으로.
+- **#4 섯다 올인 사이드팟**: 콜할 돈이 모자라면 가진 만큼 올인. 올인자는 더 행동하지 않음. 레이즈 상한 = min(내 잔액, 아직 낼 수 있는 다른 사람의 최대치). 쇼다운 시 생존자 투입 금액 수준별 메인/사이드팟(`result.pots`), 팟마다 승자 판정(사이드팟 비교에서는 구사 재경기 미적용), 혼자 남은 사이드팟은 환급(승리 아님). 전원 참가비로 올인이면 즉시 쇼다운. 기존 '최소 보유자 한도' 규칙은 폐기.
+- **#5 고스톱 쇼당·독박·기리**: 독박 = 3인 이상에서 고박 대납(태그 '독박 (고박)') + 쇼당 받은 사람(태그 '독박 (쇼당 받음)'), 결과에 `dokbak`·"독박!" 배너. 쇼당(해석): 3인, 내 차례(play), 두 상대가 모두 기준 점수 이상, 내가 고를 안 불렀고 손패 2장 이상, 판당 1회 → 두 상대에게 차례로 묻고 둘 다 수락하면 나가리(이월 옵션 적용), 한 명이라도 받으면 계속하고 그 사람이 독박 책임(쇼당 부른 사람이 나면 독박 없음). phase `shodang`, 소켓 `game:shodang`, `game:shodangAnswer {accept}`, HeuristicBot 도 판단. 기리: `game:start.cutter`(선의 앞사람) → 덱을 둘로 나눠 바꾸는 1.7초 연출(서버 셔플은 그대로, 첫 차례 대기에 `GIRI_MS` 반영).
+- **#6 섯다 묻고 더블**: 최고 족보 동점이고 모든 팟을 그 동점자들이 똑같이 나눌 때 `result.tie` → `seotda:tieVote {pids, votes, deadlineAt, ante}` 투표(`SEOTDA_VOTE_MS` 15초). 동점자 전원 동의 시 동점자끼리만 판돈 2배로 새 판(`doubleArgs`: 팟 이월, 진 사람의 돈은 `outsiders` 로 팟에 남고 정산에 포함), 거절/시간초과/이탈/끊김이면 분배. 봇은 60% 확률 동의. `seotda:tieResult`, 화면에 투표 모달·"💰 묻고 더블" 표시.
+- 테스트: `turn.test.js`(타이머/자동 진행), `shodang.test.js`, 섯다 엔진(올인·사이드팟·동점·더블)·소켓(묻고 더블 동의/거절, 섯다 스탯·업적·랭킹)·재접속(AI 대행) 테스트 갱신. **19 suites / 1469 tests 통과**. Playwright 로 기리 연출·차례 타이머·자동 진행 토글·끊김 안내·섯다 연습/결과·랭킹 탭 확인(콘솔 에러 없음). 묻고 더블 투표 모달·사이드팟 결과 표시는 소켓 테스트로만 검증(브라우저 육안 확인은 못 함).
+- 버그 수정: 1초마다 다시 그려지는 차례 타이머 때문에 '선 정하기' 연출 타이머가 계속 리셋되던 문제 → `useLatest` ref.
+
+## ✅ TODO #7, #9~#14 구현 (2026-10-24, #8 은 제외)
+- **#7 족보 비상**: `cards.js nearCombos(captured, pid)` — 홍단/청단/초단/고도리가 2/3, 광이 2·3·4장(→ 삼광/사광/오광 비상)일 때. 남은 패를 이미 다른 사람이 먹었으면 표시 안 함. 피·멍(열끗)·띠 장수는 요청대로 제외. 점수칩 옆 빨간 '🚨 ○○ 비상' 배지(나/상대 모두) + 새로 생길 때 상단 작은 팝업과 `alert` 효과음(`useNearAlert`, 판 시작·재접속 직후 상태는 알리지 않음).
+- **#8 고/스톱 판단 보조 정보**: 사용자 요청으로 제외.
+- **#9 고스톱 규칙 도움말**: `GostopHelp.jsx`, 상단 '❓ 규칙' 버튼. 점수/고·스톱/박/뻑·따닥·쪽·싹쓸이/흔들기·폭탄·총통/3인 이상 규칙 아코디언(서버 GostopGame·score.js 기준 수치). 배경 클릭 통과라 게임을 계속할 수 있음.
+- **#10 정산 연출**: `GameOver` 의 `useSettleSteps` — 족보 점수가 0.42초 간격으로 한 줄씩 쌓이며 합계 증가 → 패자별 행에 배수 태그(박·흔들기·고·이월·독박)가 하나씩 찍힘 → 최종 '점수 × 판돈'. `tick/boost/chip` 효과음, 클릭하면 건너뜀. 머니 증감은 연출이 끝난 뒤 표시.
+- **#11 섯다 배분/공개/쪼기**: 새 판(`seotda:start` → store `seotdaDeal` 키)마다 테이블 가운데서 좌석으로 카드가 한 장씩 두 바퀴 날아감(`DealLayer`). 쇼다운 때 상대 패를 앉은 순서대로 0.75초 간격으로 뒤집고(`flip` 효과음), 공개가 끝난 뒤 승자 표시·결과 창(공개 연출 동안 결과 창·동점 투표 창·안내 문구·기록의 결과 줄은 숨김). 내 패는 뒷면으로 오고 위로 밀어 올리면 아래부터 보이는 '쪼기'(`SqueezeCard`, 42% 넘게 밀거나 탭하면 공개, '👀 바로 보기' 버튼). 판이 끝나거나 재접속 복구면 바로 공개. 승패 효과음은 결과 창이 뜰 때로 옮김.
+- **#12 칩 이동**: `seotda:state.event` → store `seotdaEvent` → 베팅 금액 칩이 좌석에서 팟으로, 공개 후 팟에서 받는 사람에게(`ChipLayer`, % 좌표 애니메이션). 결과 창은 칩 이동을 본 뒤(+1초) 뜸.
+- **#13 베팅 버튼 금액**: 원래도 금액은 나와 있었음 → 두 줄 형식 [하프 / +1,200], 체크는 ±0, 올인이면 🔥 표시, 데스크톱은 옆에 보유금. 모바일에서 한 줄에 들어가게 버튼 폭 축소.
+- **#14 판 액션 기록**: 테이블 왼쪽 위 접이식 '📜 판 기록'(누가 무엇을 얼마, 그때 팟, 올인/자리 비움, 끝나면 결과 줄). 열림 상태는 localStorage 에 기억(기본: 넓은 화면만 열림). 서버 `view.log` 를 최근 12 → 40개로 늘림. 재경기/묻고 더블은 새 판이라 기록도 새로 시작.
+- 덤: 자동 진행 중 버튼 문구가 모바일 상단 바를 밀어내던 문제 → 모바일은 '🤖 끄기'.
+- 검증: 백엔드 19 suites / 1469 tests (전체 실행 시 `heuristic.test.js` 의 '결정당 최대 지연 < 10ms' 2개가 부하로 12~14ms 가 나와 실패, 단독 실행은 통과 — 이번 변경과 무관한 타이밍 테스트). Playwright(임시 서버 4100): 섯다 연습 데스크톱/모바일(배분, 쪼기 반쯤 밀기·공개, 금액 버튼, 칩, 순차 공개, 결과), 고스톱 연습 데스크톱/모바일(규칙 도움말, '삼광 비상'·'고도리 비상' 팝업/배지, 정산 연출) — 콘솔 에러 없음. 3인 이상 섯다의 순차 공개와 다인 칩 이동은 브라우저로는 확인하지 못함(같은 코드 경로).

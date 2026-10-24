@@ -1,0 +1,27 @@
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+export const PORT = Number(process.env.PORT) || 4000;
+export const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+export const INITIAL_MONEY = 100000;
+export const PICS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../pics');
+export const FRONTEND_DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../frontend/dist');
+export const BET_OPTIONS = [100, 500, 1000, 5000];
+export const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS) || 10;
+// AI 봇이 행동하기 전 대기 시간 배율 (프론트 프레임 재생 시간을 기다려 준다). 테스트에서는 0 에 가깝게.
+export const BOT_DELAY_SCALE = Number(process.env.BOT_DELAY_SCALE ?? 1);
+// 업로드된 아바타 이미지 저장 위치
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
+export const AVATAR_DIR = path.join(UPLOAD_DIR, 'avatars');
+// 연결이 끊긴 유저의 자리를 유지하는 시간. 판이 진행 중이면 그동안 AI 가 대신 두고, 초과하면 판이 끝난 뒤 퇴장 처리
+export const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_MS) || 60000;
+// 섯다: 한 사람의 베팅 제한 시간 (초과하면 체크 가능할 때 체크, 아니면 다이)
+export const SEOTDA_TURN_MS = Number(process.env.SEOTDA_TURN_MS) || 40000;
+// 구사 재경기: 결과를 보여준 뒤 다음 판을 시작하기까지의 대기 시간
+export const SEOTDA_REMATCH_MS = Number(process.env.SEOTDA_REMATCH_MS) || 4000;
+// 고스톱: 한 사람의 차례 제한 시간 (초과하면 AI 가 한 수 대신 둔다)
+export const GOSTOP_TURN_MS = Number(process.env.GOSTOP_TURN_MS) || 30000;
+// 연속으로 이만큼 시간을 초과하면 그 사람은 AI 자동 진행으로 전환된다 (직접 해제 가능)
+export const AUTO_AFTER_TIMEOUTS = 2;
+// 섯다 동점 '묻고 더블' 동의 대기 시간
+export const SEOTDA_VOTE_MS = Number(process.env.SEOTDA_VOTE_MS) || 15000;
