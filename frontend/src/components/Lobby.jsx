@@ -1,16 +1,19 @@
 import { SoundToggle } from './SoundToggle.jsx';
 import { ComingSoon } from './ComingSoon.jsx';
-import { SlotMachine } from './SlotMachine.jsx';
 import { GAMES } from '../games.js';
 import { Avatar } from './Avatar.jsx';
-import { ProfilePanel } from './Profile.jsx';
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
+import { lazyNamed } from '../lazy.js';
+import { Loading } from './Loading.jsx';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from '../store.jsx';
 import { api } from '../api.js';
 import { won, signed } from '../cards.js';
 import { Chat } from './Chat.jsx';
 import { OPTION_LABELS, BETS } from './options.js';
+
+const SlotMachine = lazyNamed(() => import('./SlotMachine.jsx'), 'SlotMachine');
+const ProfilePanel = lazyNamed(() => import('./Profile.jsx'), 'ProfilePanel');
 
 function OptionToggles({ opts, onChange, disabled }) {
   return (
@@ -104,7 +107,7 @@ function SidePanel({ tab, setTab }) {
               <span className="whitespace-nowrap text-slate-300">{rankText(u)}</span>
             </div>
           ))}
-        {tab === 'me' && <ProfilePanel />}
+        {tab === 'me' && <Suspense fallback={<Loading small />}><ProfilePanel /></Suspense>}
         {tab === 'rec' &&
           (records.length === 0 ? (
             <p className="text-slate-400">아직 기록이 없습니다.</p>
@@ -179,7 +182,7 @@ export function Lobby() {
       </nav>
 
       <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[1fr_320px]">
-        {game === 'slot' ? <SlotMachine /> : !['gostop', 'seotda'].includes(game) ? <ComingSoon gameId={game} /> : (
+        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : !['gostop', 'seotda'].includes(game) ? <ComingSoon gameId={game} /> : (
         <section className="panel flex min-h-0 flex-col bg-black/65 p-3">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="font-bold">{game === 'seotda' ? '🃏 섯다' : '🎴 고스톱'} 방 목록 ({gameRooms.length})</h2>

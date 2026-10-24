@@ -25,8 +25,13 @@ export function createServer() {
 
   // 프론트엔드 빌드가 있으면 함께 서빙
   if (fs.existsSync(FRONTEND_DIST)) {
-    app.use(express.static(FRONTEND_DIST));
-    app.get(/^\/(?!api|pics|uploads|socket\.io).*/, (_req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')));
+    // 해시가 붙은 청크(/assets)는 내용이 바뀌면 이름도 바뀌므로 오래 캐시, index.html 은 매번 확인
+    app.use('/assets', express.static(path.join(FRONTEND_DIST, 'assets'), { maxAge: '1y', immutable: true }));
+    app.use(express.static(FRONTEND_DIST, { setHeaders: (res, file) => file.endsWith('.html') && res.setHeader('Cache-Control', 'no-cache') }));
+    app.get(/^\/(?!api|pics|uploads|assets|socket\.io).*/, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+    });
   }
 
   // 업로드 크기 초과 등 body 파싱 오류를 JSON 으로 응답

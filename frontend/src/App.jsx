@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { Suspense } from 'react';
+import { lazyNamed } from './lazy.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from './store.jsx';
 import { Auth } from './components/Auth.jsx';
 import { Lobby } from './components/Lobby.jsx';
 import { Room } from './components/Room.jsx';
-import { GameBoard } from './components/GameBoard.jsx';
-import { SeotdaBoard } from './components/SeotdaBoard.jsx';
+import { Loading } from './components/Loading.jsx';
+
+// 게임 화면은 처음 들어갈 때 불러온다 (첫 화면 번들 축소)
+const GameBoard = lazyNamed(() => import('./components/GameBoard.jsx'), 'GameBoard');
+const SeotdaBoard = lazyNamed(() => import('./components/SeotdaBoard.jsx'), 'SeotdaBoard');
 
 function Toast() {
   const { toast } = useApp();
@@ -83,8 +87,14 @@ function RewardModal() {
 
 export default function App() {
   const { token, user, booting, room, view, seotda } = useApp();
+  // 방에 들어가면 게임 화면 코드를 미리 받아 둔다 (시작 순간 로딩 표시가 뜨지 않게)
+  const roomType = room?.game;
+  React.useEffect(() => {
+    if (!roomType) return;
+    (roomType === 'seotda' ? import('./components/SeotdaBoard.jsx') : import('./components/GameBoard.jsx')).catch(() => {});
+  }, [roomType]);
   let screen;
-  if (booting) screen = <div className="flex h-full items-center justify-center text-slate-300">불러오는 중…</div>;
+  if (booting) screen = <Loading />;
   else if (!token || !user) screen = <Auth />;
   else if (room && view) screen = <GameBoard />;
   else if (room && seotda) screen = <SeotdaBoard />;
@@ -92,7 +102,7 @@ export default function App() {
   else screen = <Lobby />;
   return (
     <>
-      {screen}
+      <Suspense fallback={<Loading />}>{screen}</Suspense>
       <Toast />
       <RewardModal />
       <DisconnectOverlay />
