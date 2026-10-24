@@ -27,7 +27,7 @@ const COORD_PX = 14; // 좌표 글자 영역 두께
 const THEMES = {
   wood: { bg: 'repeating-linear-gradient(92deg,rgba(120,70,20,.10) 0 3px,transparent 3px 9px),linear-gradient(135deg,#e7b866,#d9a24d 55%,#c98f3b)', line: '#3b2a14' },
   marble: { bg: 'repeating-linear-gradient(115deg,rgba(100,116,139,.10) 0 2px,transparent 2px 14px),linear-gradient(135deg,#f3f4f6,#d1d5db 55%,#e5e7eb)', line: '#4b5563' },
-  dark: { bg: 'linear-gradient(135deg,#243044,#111827 70%)', line: '#8b9bb4' },
+  dark: { bg: 'linear-gradient(135deg,#64748b,#475569 70%)', line: '#e2e8f0' },
 };
 // 돌 스킨
 const STONES = {
@@ -53,7 +53,7 @@ function lineBg(x, y, c) {
 
 function Stone({ color, skin = 'classic', theme = 'wood', ghost = false, fresh = false, mark = false, win = false, num = null, last = false }) {
   const black = color === BLACK;
-  const edge = black ? (theme === 'dark' ? 'ring-1 ring-white/30' : '') : 'ring-1 ring-black/25';
+  const edge = black ? (theme === 'dark' ? 'ring-2 ring-white/70' : '') : (theme === 'dark' ? 'ring-1 ring-black/60' : 'ring-1 ring-black/25');
   return (
     <motion.span
       className={`absolute inset-[9%] flex items-center justify-center rounded-full ${edge} ${win ? '!ring-2 ring-emerald-400' : ''}`}

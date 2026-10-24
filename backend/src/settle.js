@@ -211,3 +211,40 @@ export async function settleOmok({ roomName, ante, pids, result, ranked = true }
     return { delta, money, gameId: game.id, unlocked };
   });
 }
+
+/** 윷놀이 정산: 진 팀 사람마다 참가비(모자라면 가진 만큼)를 모아 이긴 팀 사람들이 똑같이 나눠 가진다. 연습 판은 호출하지 않는다. */
+export async function settleYut({ roomName, ante, pids, result }) {
+  return prisma.$transaction(async (tx) => {
+    const users = await tx.user.findMany({ where: { id: { in: pids } } });
+    const bal = Object.fromEntries(users.map((u) => [u.id, u.money]));
+    const exempt = new Set(users.filter((u) => u.isBot).map((u) => u.id));
+    const delta = Object.fromEntries(pids.map((p) => [p, 0]));
+    let pool = 0;
+    for (const l of result.losers) {
+      const pay = exempt.has(l) ? ante : Math.min(ante, bal[l] ?? 0);
+      delta[l] = -pay;
+      pool += pay;
+    }
+    const share = Math.floor(pool / result.winners.length);
+    result.winners.forEach((w, i) => {
+      delta[w] = share + (i === 0 ? pool - share * result.winners.length : 0);
+    });
+    const money = {};
+    for (const u of users) {
+      if (u.isBot) continue;
+      const upd = await tx.user.update({ where: { id: u.id }, data: { money: { increment: delta[u.id] ?? 0 } } });
+      money[u.id] = upd.money;
+    }
+    const game = await tx.game.create({
+      data: {
+        roomName: `[윷놀이] ${roomName}`,
+        betPerPt: ante,
+        playerCount: pids.length,
+        nagari: false,
+        detail: `윷놀이${result.kind === 'forfeit' ? ' · 기권' : ''}`,
+        results: { create: users.filter((u) => !u.isBot).map((u) => ({ userId: u.id, outcome: result.winners.includes(u.id) ? 'win' : 'lose', moneyDelta: delta[u.id] ?? 0 })) },
+      },
+    });
+    return { delta, money, gameId: game.id, unlocked: {} };
+  });
+}

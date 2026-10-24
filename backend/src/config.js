@@ -44,3 +44,6 @@ export const LOGIN_RATE_MAX = envNum('LOGIN_RATE_MAX', process.env.NODE_ENV === 
 export const LOGIN_RATE_WINDOW_MS = 60 * 1000;
 export const REGISTER_RATE_MAX = envNum('REGISTER_RATE_MAX', process.env.NODE_ENV === 'test' ? 0 : 5); // 1시간에 5개
 export const REGISTER_RATE_WINDOW_MS = 60 * 60 * 1000;
+
+// 윷놀이: 던지기/말 선택 한 단계당 제한 시간
+export const YUT_TURN_MS = Number(process.env.YUT_TURN_MS) || 30000;

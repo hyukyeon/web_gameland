@@ -4,6 +4,8 @@ import { useApp } from '../store.jsx';
 
 export const EMOTES = ['묻고 더블로 가!', '싸늘하다...', '동작그만 밑장빼기냐?', '아수라발발타'];
 // 오목 방 전용 (서버 OMOK_EMOTES 와 같아야 한다)
+// 윷놀이 방 전용 (서버 YUT_EMOTES 와 같아야 한다)
+export const YUT_EMOTES = ['윷이다! 🎉', '아이고 잡혔네', '모야 모!', '한 판 더!'];
 export const OMOK_EMOTES = ['좋은 수네요 👍', '아차!', '잠깐만요… 생각 중이에요', '한 판 더 해요!'];
 
 /** 아바타 위(또는 아래)에 통통 튀어오르는 말풍선. 3초 뒤 서버 이벤트 없이 사라진다(스토어에서 제거 → exit 애니메이션). */

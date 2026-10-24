@@ -2,9 +2,11 @@ import { Server } from 'socket.io';
 import { prisma } from './db.js';
 import { verifyToken, publicUser, displayName, avatarUrl, BOT_PREFIX } from './auth.js';
 import { bus } from './events.js';
-import { settleGame, settleSeotda, settleOmok, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
+import { settleGame, settleSeotda, settleOmok, settleYut, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
 import { SeotdaGame } from './seotda/SeotdaGame.js';
 import { OmokGame } from './omok/OmokGame.js';
+import { YutGame } from './yut/YutGame.js';
+import { YutBot } from './yut/YutBot.js';
 import { pickMove, analyze as analyzeMoves, closePool } from './omok/aiPool.js';
 import * as metrics from './omok/metrics.js';
 import { achievementById, titleText, recordOmokPractice } from './stats.js';
@@ -13,12 +15,13 @@ import {
   parseLevel, pickPersona, personaByKey, botDisplayName, botAvatar, botLine,
   makeGostopBrain, makeSeotdaBrain, makeOmokBrain, proxyGostopBrain, proxySeotdaBrain, proxyOmokBrain, gostopReactions, seotdaReactions,
 } from './bots.js';
-import { BET_OPTIONS, BOT_DELAY_SCALE, RECONNECT_GRACE_MS, SEOTDA_TURN_MS, SEOTDA_REMATCH_MS, GOSTOP_TURN_MS, AUTO_AFTER_TIMEOUTS, SEOTDA_VOTE_MS, OMOK_TURN_MS, OMOK_TURN_CHOICES, OMOK_UNDO_LIMIT, OMOK_PRACTICE_UNDOS, OMOK_UNDO_ASK_MS } from './config.js';
+import { BET_OPTIONS, BOT_DELAY_SCALE, RECONNECT_GRACE_MS, SEOTDA_TURN_MS, SEOTDA_REMATCH_MS, GOSTOP_TURN_MS, AUTO_AFTER_TIMEOUTS, SEOTDA_VOTE_MS, OMOK_TURN_MS, OMOK_TURN_CHOICES, OMOK_UNDO_LIMIT, OMOK_PRACTICE_UNDOS, OMOK_UNDO_ASK_MS, YUT_TURN_MS } from './config.js';
 
 const MIN_MONEY_MULT = 10; // 입장하려면 판돈 × 10 이상 보유
 const MAX_PLAYERS = 4;
 const maxPlayersOf = (type) => (type === 'omok' ? 2 : MAX_PLAYERS);
-const gameType = (g) => (g === 'seotda' || g === 'omok' ? g : 'gostop');
+const YUT_EMOTES = ['윷이다! 🎉', '아이고 잡혔네', '모야 모!', '한 판 더!'];
+const gameType = (g) => (g === 'seotda' || g === 'omok' || g === 'yut' ? g : 'gostop');
 const MAX_SPECTATORS = 8;
 const GIRI_MS = 1800; // 판 시작 기리 연출 시간 (클라이언트와 맞춘다)
 // 타짜 명대사 매크로: 클라이언트가 보낸 임의 문자열은 받지 않고 이 목록의 것만 방송한다
@@ -172,6 +175,8 @@ export function attachSockets(httpServer, corsOrigin) {
       if (g.phase === 'betting') startSeotdaTurn(room);
     } else if (room.type === 'omok') {
       if (g.phase === 'playing') startOmokTurn(room);
+    } else if (room.type === 'yut') {
+      if (g.phase !== 'ended') startYutTurn(room);
     } else scheduleTurn(room, null);
   }
 
@@ -290,6 +295,7 @@ export function attachSockets(httpServer, corsOrigin) {
   function startGame(room) {
     if (room.type === 'seotda') return startSeotda(room);
     if (room.type === 'omok') return startOmok(room);
+    if (room.type === 'yut') return startYut(room);
     room.status = 'playing';
     room.brains = new Map(); // 새 판: 봇의 카운팅 기억 초기화
     const ids = room.players.map((p) => p.id);
@@ -776,6 +782,119 @@ export function attachSockets(httpServer, corsOrigin) {
     startOmokTurn(room);
   }
 
+
+  // ---------- 윷놀이 ----------
+  function clearYutTimer(room) {
+    for (const k of ['yut', 'yut-bot']) {
+      clearTimeout(room.timers.get(k));
+      room.timers.delete(k);
+    }
+  }
+
+  const yutBot = (room, pid) => {
+    room.yutBots ??= new Map();
+    if (!room.yutBots.has(pid)) {
+      const p = playerOf(room, pid);
+      room.yutBots.set(pid, new YutBot({ level: p?.bot ? p.level : 'hard' }));
+    }
+    return room.yutBots.get(pid);
+  };
+
+  /** 서버가 대신 한 단계: 던지기 단계면 던지고, 이동 단계면 AI 가 고른 수를 둔다 */
+  function yutAuto(room, game, who) {
+    if (room.game !== game || game.turn !== who || game.phase === 'ended') return;
+    if (game.phase === 'throw') {
+      const r = game.throw(who);
+      if (r.ok) handleYut(room, game);
+      return;
+    }
+    const m = yutBot(room, who).decide(game);
+    const r = m ? game.move(who, m.pieceId, m.index) : { ok: false };
+    if (r.ok) handleYut(room, game);
+  }
+
+  function startYutTurn(room) {
+    const game = room.game;
+    clearYutTimer(room);
+    if (!game || game.phase === 'ended' || rooms.get(room.id) !== room) return;
+    const who = game.turn;
+    const auto = isProxied(room, who);
+    const deadlineAt = auto ? null : Date.now() + YUT_TURN_MS;
+    io.to(`room:${room.id}`).emit('TURN_START', { game: 'yut', userId: who, deadlineAt, auto, phase: game.phase });
+    if (auto) {
+      const t = setTimeout(() => {
+        room.timers.delete('yut-bot');
+        yutAuto(room, game, who);
+      }, (700 + Math.random() * 600) * BOT_DELAY_SCALE);
+      t.unref?.();
+      room.timers.set('yut-bot', t);
+      return;
+    }
+    const phase = game.phase;
+    const t = setTimeout(() => {
+      if (room.game !== game || game.turn !== who || game.phase !== phase) return;
+      noteTimeout(room, who);
+      yutAuto(room, game, who);
+    }, YUT_TURN_MS);
+    t.unref?.();
+    room.timers.set('yut', t);
+  }
+
+  /** 던지기·이동 뒤: 상태 방송 → (끝났으면 정산 / 아니면 다음 단계). 연출이 끝날 시간을 두고 봇이 움직인다 */
+  function handleYut(room, game) {
+    for (const v of viewers(room)) online.get(v.id)?.emit('yut:state', { view: game.view() });
+    if (game.phase === 'ended') {
+      clearYutTimer(room);
+      return finishYut(room, game);
+    }
+    return startYutTurn(room);
+  }
+
+  async function finishYut(room, game) {
+    if (room.game !== game) return;
+    const res = game.result;
+    const pids = game.pids;
+    room.status = 'waiting';
+    room.game = null;
+    room.yutBots = null;
+    resetReady(room);
+    const ranked = isRankedRoom(room);
+    let payout = null;
+    try {
+      if (ranked) payout = await settleYut({ roomName: room.name, ante: room.bet, pids, result: res });
+    } catch (e) {
+      console.error('yut settle failed', e);
+      sysChat(room, '정산 중 오류가 발생했습니다.');
+    }
+    const overPayload = { result: res, payout, ante: room.bet, ranked, teams: game.team };
+    io.to(`room:${room.id}`).emit('yut:over', overPayload);
+    for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winners.includes(bid) ? 'win' : 'lose', 900 * BOT_DELAY_SCALE);
+    for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
+    for (const p of room.players) pushUser(p.id);
+    emitRoom(room);
+    broadcastRooms();
+    afterGame(room);
+  }
+
+  /** 퇴장(기권) 처리 결과: 팀이 끝났으면 정산, 아니면 이어서 */
+  function afterYutForfeit(room, game, uid, r) {
+    if (r.ended) return handleYut(room, game);
+    for (const v of viewers(room)) online.get(v.id)?.emit('yut:state', { view: game.view() });
+    return startYutTurn(room);
+  }
+
+  function startYut(room) {
+    room.status = 'playing';
+    room.yutBots = new Map();
+    const ids = room.players.map((p) => p.id);
+    // 방 순서대로 청·홍 번갈아. 이긴 쪽의 선이 아니라 던져서 정하지 않고 방장이 먼저 (단순화)
+    room.game = new YutGame(ids, { ante: room.bet, first: ids.includes(room.first) ? room.first : ids[0] });
+    for (const v of viewers(room)) online.get(v.id)?.emit('yut:start', { view: room.game.view(), ranked: isRankedRoom(room) });
+    emitRoom(room);
+    broadcastRooms();
+    startYutTurn(room);
+  }
+
   function withGame(socket, cb, fn) {
     const uid = socket.data.user.id;
     const room = rooms.get(userRoom.get(uid));
@@ -822,7 +941,7 @@ export function attachSockets(httpServer, corsOrigin) {
     if (room.game && forfeit) {
       const game = room.game;
       const r = game.forfeit(uid);
-      if (r.ok) await (room.type === 'seotda' ? handleSeotdaEvents(room, game, r.events) : room.type === 'omok' ? handleOmokMove(room, game, null) : handleGameResult(room, game, r.frames));
+      if (r.ok) await (room.type === 'seotda' ? handleSeotdaEvents(room, game, r.events) : room.type === 'omok' ? handleOmokMove(room, game, null) : room.type === 'yut' ? afterYutForfeit(room, game, uid, r) : handleGameResult(room, game, r.frames));
     }
     const leaver = room.players.find((p) => p.id === uid);
     room.players = room.players.filter((p) => p.id !== uid);
@@ -874,7 +993,7 @@ export function attachSockets(httpServer, corsOrigin) {
   /** 재접속/새로고침/복귀 시 클라이언트 상태를 서버 기준으로 통째로 덮어쓰는 스냅샷 */
   function syncPayload(uid) {
     const room = rooms.get(userRoom.get(uid));
-    if (!room) return { room: null, chat: [], view: null, seotda: null, omok: null, tieVote: null, over: null, ranked: null, role: null };
+    if (!room) return { room: null, chat: [], view: null, seotda: null, omok: null, yut: null, tieVote: null, over: null, ranked: null, role: null };
     const me = room.players.find((p) => p.id === uid);
     const over = me?.missedOver ?? null;
     if (me) me.missedOver = null;
@@ -884,6 +1003,7 @@ export function attachSockets(httpServer, corsOrigin) {
       view: room.game && room.type === 'gostop' ? room.game.view(uid) : null,
       seotda: room.game && room.type === 'seotda' ? room.game.view(uid) : null,
       omok: room.game && room.type === 'omok' ? room.game.view() : null,
+      yut: room.game && room.type === 'yut' ? room.game.view() : null,
       tieVote: tieVotePayload(room.tieVote),
       over,
       ranked: isRankedRoom(room),
@@ -1161,7 +1281,7 @@ export function attachSockets(httpServer, corsOrigin) {
     socket.on('SEND_EMOTE', (payload, cb) => {
       const room = rooms.get(userRoom.get(uid));
       const text = typeof payload?.text === 'string' ? payload.text : '';
-      if (!room || !room.players.some((p) => p.id === uid) || !(EMOTES.includes(text) || (room.type === 'omok' && OMOK_EMOTES.includes(text)))) return ack(cb, { ok: false, error: '보낼 수 없는 표현입니다.' });
+      if (!room || !room.players.some((p) => p.id === uid) || !(EMOTES.includes(text) || (room.type === 'omok' && OMOK_EMOTES.includes(text)) || (room.type === 'yut' && YUT_EMOTES.includes(text)))) return ack(cb, { ok: false, error: '보낼 수 없는 표현입니다.' });
       if (!chatOk()) return ack(cb, { ok: false, error: '너무 빠르게 보내고 있습니다.' });
       io.to(`room:${room.id}`).emit('BROADCAST_EMOTE', { userId: uid, name: socket.data.user.name, text, ts: Date.now() });
       return ack(cb, { ok: true });
@@ -1210,6 +1330,33 @@ export function attachSockets(httpServer, corsOrigin) {
       ack(cb, { ok: true });
       emitTieVote(room);
       return checkTieVote(room, vote);
+    });
+    // 윷놀이: 던지기 / 말 이동
+    const yutRoom = (cb) => {
+      const room = rooms.get(userRoom.get(uid));
+      if (!room || room.type !== 'yut' || !room.game) return ack(cb, { ok: false, error: '진행 중인 윷놀이가 없습니다.' }) && null;
+      if (!room.players.some((p) => p.id === uid)) return ack(cb, { ok: false, error: '관전자는 조작할 수 없습니다.' }) && null;
+      return room;
+    };
+    socket.on('yut:throw', (_p, cb) => {
+      const room = yutRoom(cb);
+      if (!room) return undefined;
+      const game = room.game;
+      const r = game.throw(uid);
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleYut(room, game);
+    });
+    socket.on('yut:move', (payload, cb) => {
+      const room = yutRoom(cb);
+      if (!room) return undefined;
+      const game = room.game;
+      const r = game.move(uid, Number(payload?.pieceId), Number(payload?.index));
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleYut(room, game);
     });
     // 오목 착수
     socket.on('omok:place', (payload, cb) => {
