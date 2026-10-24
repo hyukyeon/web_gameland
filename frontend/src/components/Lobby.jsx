@@ -16,6 +16,7 @@ import { Chat } from './Chat.jsx';
 import { OPTION_LABELS, BETS, LEVELS } from './options.js';
 
 const SlotMachine = lazyNamed(() => import('./SlotMachine.jsx'), 'SlotMachine');
+const SudokuGame = lazyNamed(() => import('./SudokuGame.jsx'), 'SudokuGame');
 const ProfilePanel = lazyNamed(() => import('./Profile.jsx'), 'ProfilePanel');
 
 function OptionToggles({ opts, onChange, disabled }) {
@@ -244,7 +245,7 @@ export function Lobby() {
       </header>
 
       {/* 게임 선택: 고스톱만 열려 있고 섯다·슬롯머신은 스텁 */}
-      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="게임 선택" data-tour="games">
+      <nav className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="게임 선택" data-tour="games">
         {GAMES.map((g) => (
           <button
             key={g.id}
@@ -262,7 +263,7 @@ export function Lobby() {
       </nav>
 
       <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[1fr_320px]">
-        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : !['gostop', 'seotda', 'omok', 'yut'].includes(game) ? <ComingSoon gameId={game} /> : (
+        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : game === 'sudoku' ? <Suspense fallback={<Loading small />}><SudokuGame /></Suspense> : !['gostop', 'seotda', 'omok', 'yut'].includes(game) ? <ComingSoon gameId={game} /> : (
         <section className="panel flex min-h-0 min-w-0 flex-col bg-black/65 p-3" data-tour="rooms">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold">{GAME_TITLE[game]} 방 목록 ({gameRooms.length})</h2>

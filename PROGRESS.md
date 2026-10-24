@@ -3,9 +3,10 @@
 > 새 세션: `claude.md` → 이 파일 → `TODO.md` 순으로 읽는다. 이 문서는 **연대기가 아니라 현재 상태**를 적는다(작업 후 해당 섹션을 고쳐 쓰고, 낡은 내용은 지운다).
 
 ## 0. 한눈에 보기
-- **상태**: 5개 게임 모두 구현·배포 가능 상태. 마지막 작업 = 고스톱 UI/편의성 개선 G1~G17 + 국진 보강 (**미커밋**). 마지막 커밋 `8b61356`(국진 선택).
-- **테스트**: 백엔드 Jest 28 suites / 1616 tests / 프론트 Vitest 22 / Playwright E2E 29(데스크톱·모바일, 1 skip). 마지막 전체 실행 결과는 §8.
-- **게임**: 고스톱(2~4인) · 섯다(2~4인) · 슬롯머신(1인, REST) · 오목(2인) · 윷놀이(2~4인 팀전). 모두 AI 봇/연습·관전(슬롯 제외)·재접속 복구 지원.
+- **상태**: 6개 게임 모두 구현·배포 가능 상태. 마지막 작업 = 스도쿠 일일 보상 모드(아래 §3 스도쿠). 고스톱 UI 개선 G1~G17 은 `76a6b9f`.
+- ✅ 스도쿠 게임 모드 및 일일 보상(1천원/10회) 시스템 추가 완료 (무중단 1~4 페이즈 완료)
+- **테스트**: 백엔드 Jest 29 suites / 1626 tests / 프론트 Vitest 22 / Playwright E2E 31(데스크톱·모바일, 1 skip). 마지막 전체 실행 결과는 §8.
+- **게임**: 고스톱(2~4인) · 섯다(2~4인) · 슬롯머신(1인, REST) · 오목(2인) · 윷놀이(2~4인 팀전) · 스도쿠(1인 퍼즐, REST). 모두 AI 봇/연습·관전(슬롯 제외)·재접속 복구 지원.
 - **서버**: 포트 4000, `frontend/dist` 정적 서빙. 로그는 `server.log`(git 제외).
 
 ## 1. 저장소 구조
@@ -13,16 +14,17 @@
 backend/src/
   app.js index.js config.js db.js auth.js events.js rateLimit.js   # Express·Prisma·인증(JWT)·레이트 리밋
   sockets.js        # 방/로비/채팅/모든 게임의 소켓 이벤트, 타이머, 봇 스케줄, 재접속 (가장 큰 파일)
-  settle.js stats.js bots.js slot.js slotMath.js
+  settle.js stats.js bots.js slot.js slotMath.js sudoku.js(REST 라우터)
   game/   cards.js score.js GostopGame.js AiPlayer.js HeuristicBot.js
   seotda/ rules.js SeotdaGame.js SeotdaBot.js
   omok/   rules.js engine.js OmokGame.js OmokBot.js opening.js analysis.js aiPool.js aiWorker.js metrics.js
   yut/    board.js YutGame.js YutBot.js
-backend/prisma/schema.prisma + migrations/ (7개)      backend/scripts/omok-strength.mjs
+  sudoku/ engine.js(생성·빈칸·검증)
+backend/prisma/schema.prisma + migrations/ (8개)      backend/scripts/omok-strength.mjs
 backend/test/*.test.js (+ helpers/db.js: 임시 SQLite)
 frontend/src/ store.jsx(소켓·프레임 재생기) App.jsx games.js settings.js sound.js keys.js lazy.js pwa.js yut.js omokSkill.js cards.js
   components/ Auth Lobby Room GameBoard(고스톱) SeotdaBoard OmokBoard YutBoard SlotMachine Profile Settings Tutorial
-              Card Avatar Chat Emote GostopHelp JokboHelp SoundToggle TurnTools ComingSoon Loading options.js seotdaJokbo.js
+              Card Avatar Chat Emote GostopHelp JokboHelp SoundToggle TurnTools ComingSoon Loading SudokuGame options.js seotdaJokbo.js
 frontend/test/{unit,e2e}   frontend/public/{bgm.mp3,bots/*.svg,icons,sw.js,manifest.webmanifest,...}
 pics/  (화투패 48장)
 ```
@@ -66,6 +68,13 @@ pics/  (화투패 48장)
 ### 슬롯머신 (`slot.js`, `slotMath.js`)
 - REST: `GET /api/slot/status`, `POST /api/slot/spin`(500원, 하루 베팅합 10,000 한도·KST 초기화, 유저별 직렬 큐). **이론 RTP 95.0%**: 요청서 확률표가 RTP 155% 라 배당은 유지하고 확률만 조정(`SLOT_TIERS`, 0.5%/2%/8%/31%). 소켓 푸시 없음(연출 후 머니 반영). 프론트 `SlotMachine.jsx`(3릴 순차 정지, 잭팟 파티클).
 
+### 스도쿠 (`sudoku/engine.js`, `sudoku.js`, 프론트 `SudokuGame.jsx`)
+- 엔진: 행·열·박스 비트마스크 + 무작위 순서 백트래킹으로 완성판 생성(단독 1,000판 ≈ 60ms), 중앙 기준 **점대칭**으로 빈칸 뚫기(하 30·중 40·상 50, 홀수면 중앙 1칸). **유일해는 보장하지 않음**(요청서대로) → 제출 검증은 "정답과 같은가"가 아니라 "문제 숫자를 그대로 두고 규칙대로 다 채웠는가"(`checkSubmission`).
+- REST(`/api/sudoku`): `GET /status`(오늘 현황 + 풀던 문제 `current`), `POST /new {difficulty}`(문제만 내려주고 정답은 안 보냄), `POST /submit {id, board}`. 서버는 유저별로 **지금 풀고 있는 문제 하나**를 메모리 `active` 에 둔다 — 다른 문제·만든 판을 제출해 보상을 받는 것을 막기 위함. 서버 재시작 시 사라지므로 새 문제를 받아야 함.
+- 보상: 제출 시 ① 날짜(KST, 출석·슬롯과 같은 기준)가 바뀌었으면 횟수 0 으로 봄 ② 오늘 10회면 403 "오늘 스도쿠 보상(10회)을 모두 받았습니다." ③ 맞으면 `dailySudokuCleared+1`·머니 +1,000원을 한 트랜잭션(조건부 `updateMany`) + 유저별 직렬 큐 → 동시 제출해도 한 번만 지급. 같은 문제는 한 번만(성공 시 `active` 삭제). 한도 소진 후에도 풀 수는 있고(연습), 다 풀면 보상 없이 정리.
+- UI: CSS grid 9×9(3×3 경계 굵은 테두리), 고정 숫자 검정·입력 파랑·겹침 빨강, 선택 칸/같은 줄·박스/같은 숫자 강조, `<select>` 난이도, "오늘 남은 클리어 보상: X / 10회 (클리어 당 1,000원)", 타이머. 입력은 칸 선택 → 커스텀 넘패드(1~9 + ✕, 숫자별 남은 개수) — 모바일 키보드를 띄우지 않음. 키보드: 1~9 · 0/Backspace/Delete/X · 방향키. 다 채우고 겹침이 없으면 자동 제출, 클리어 창(시간·보상·다음 문제). 진행은 `localStorage sudoku.progress` 로 새로고침해도 이어서. 넓은 화면은 넘패드가 보드 오른쪽(3열).
+- 전적/랭킹/업적 없음. 머니 갱신은 응답의 `user` 로(소켓 푸시 없음).
+
 ### 오목 (`omok/`)
 - 15×15 렌주룰: 흑 쌍삼·쌍사(4-4)·장목 금지, 백은 5목 이상. **알려진 단순화**: 금지 자리가 상대 4를 막는 경우 같은 재귀 예외 미구현, 총 시간제 미구현. 룰 퍼저(`omok.fuzz.test.js`)로 독립 브루트포스와 대조(창 ±5 버그 수정 이력).
 - AI `OmokBot`+`engine.js`: FastBoard(증분 패턴 점수·Zobrist), VCF/VCT, 반복 심화 알파-베타(깊이 ≤6, 전치표, 노드 예산+시간 안전망), 오프닝북, 쉬움=열린 3 놓치기, 성향 가중, 적응형 난이도(`strength`, 실력 추정치는 브라우저 `omokSkill.js`), 힌트(연습 판당 3번 `omok:hint`), 복기 분석(`omok:analyze`, 수순 재생 검증). 계산은 워커 스레드(`aiPool.js`, 실패/4초 초과/`OMOK_WORKER=0` 이면 동일 스레드 폴백).
@@ -79,14 +88,14 @@ pics/  (화투패 48장)
 - 이벤트: `yut:throw`, `yut:move`, → `yut:start/state/over`. 정산 `settleYut`(진 팀 참가비를 이긴 팀이 균등 분배). `YutBot`(잡기>도착>업기>지름길>전진). 전적/랭킹/업적 **없음**(머니 정산만).
 - UI `YutBoard.jsx`: SVG 윷판, 3D 윷가락 던지기, 말 이동 애니메이션, 결과 칩→말 선택→이동 확정.
 
-## 4. DB (Prisma/SQLite, 마이그레이션 7개)
-- `User`: 머니·`wins/losses`(고스톱 전용)·`isBot`·프로필(`nickname`,`avatar`)·고스톱 스탯(`statGames, goCount, ...`)·`achievements`(JSON 문자열)·`title`·출석/개평(`lastLoginAt, gaepyeongDate/Count`)·슬롯(`dailySlotSpent, lastSlotPlayedAt`)·섯다(`sd*`)·오목(`og*`). `Game(roomName, betPerPt, playerCount, nagari, detail)`, `GameResult(gameId,userId,outcome,moneyDelta)`.
+## 4. DB (Prisma/SQLite, 마이그레이션 8개)
+- `User`: 머니·`wins/losses`(고스톱 전용)·`isBot`·프로필(`nickname`,`avatar`)·고스톱 스탯(`statGames, goCount, ...`)·`achievements`(JSON 문자열)·`title`·출석/개평(`lastLoginAt, gaepyeongDate/Count`)·슬롯(`dailySlotSpent, lastSlotPlayedAt`)·스도쿠(`dailySudokuCleared, lastSudokuClearedAt`)·섯다(`sd*`)·오목(`og*`). `Game(roomName, betPerPt, playerCount, nagari, detail)`, `GameResult(gameId,userId,outcome,moneyDelta)`.
 - 윷놀이는 스키마 변경 없음. 마이그레이션 적용: `cd backend && npx prisma migrate deploy`. 실제 DB 는 `backend/prisma/dev.db`(git 제외) — **테스트에 쓰지 말 것**.
 
 ## 5. 소켓/REST 요약
 - 클→서: `room:create/join/leave/ready/options/spectate/practice/addBot/removeBot/auto`, `sync`, `lobby:chat`, `room:chat`, `SEND_EMOTE`, `game:play/choose/go/stop/sellGwang/passGwang/chongtong/passChongtong/shodang/shodangAnswer/gukjin`, `seotda:act/tieVote`, `omok:place/undo/undoReply/resign/hint/analyze`, `yut:throw/move`.
 - 서→클: `lobby:rooms`, `room:joined/state/left`, `room:chat`, `game:start/frames/over`, `seotda:*`, `omok:*`, `yut:*`, `TURN_START`, `SHOW_DOWN`, `SYNC_BOARD_STATE`, `BROADCAST_EMOTE`, `achievement:unlocked`, `me:update`, `player:offline|online`.
-- REST: `/api/auth/{register,login,me,records,ranking,profile,avatar,stats,achievements,title,checkin,gaepyeong}`, `/api/slot/{status,spin}`, `/api/metrics/omok`, `/api/health`.
+- REST: `/api/auth/{register,login,me,records,ranking,profile,avatar,stats,achievements,title,checkin,gaepyeong}`, `/api/slot/{status,spin}`, `/api/sudoku/{status,new,submit}`, `/api/metrics/omok`, `/api/health`.
 
 ## 6. 환경변수
 `PORT`(4000) · `DATABASE_URL` · `JWT_SECRET`(production 필수) · `NODE_ENV` · `UPLOAD_DIR` · `RECONNECT_GRACE_MS` · `GOSTOP_TURN_MS` · `OMOK_TURN_MS` · `YUT_TURN_MS` · `SEOTDA_VOTE_MS` · `BOT_DELAY_SCALE` · `OMOK_WORKER` · `LOGIN_RATE_MAX` · `REGISTER_RATE_MAX` · `TRUST_PROXY` · (E2E) `E2E_PORT`, `PW_CHROMIUM`, `BACKEND_URL`(vite 프록시).
@@ -97,13 +106,14 @@ pics/  (화투패 48장)
 - 자동 E2E 없는 부분: 국진 모달/🍶 칩, 고/스톱·흔들기 창, 최근 행동 로그(덱을 고정할 수단이 없어 수동 확인만). E2E 로 고정한 것: 첫 안내 자동 닫힘, 앱 안 나가기 확인 창.
 - 휴대폰 가로에서 짝 맞는 바닥패가 솟아오를 때(-12px) 윗부분이 몇 px 잘릴 수 있음.
 - 봇 강도: HeuristicBot 은 AiPlayer 대비 근소 우위(2000판 승률 ~51%). 오목 어려움은 보통 20-0, 쉬움 12-0(회귀 테스트로 고정).
-- 부하 시 불안정 테스트 2건은 `claude.md` §3 참고.
+- 부하 시 불안정 테스트는 `claude.md` §3 참고. 2026-10-24 전체 실행 중 `progress.test.js` 도 한 번 실패 후 재실행·단독 통과(부하 추정, 원인 미확인).
+- 스도쿠: 풀던 문제는 서버 메모리라 재시작하면 제출이 거절됨(새 문제 필요). 풀이 시간 하한 같은 자동 풀이 방지는 없음.
 - 메트릭은 메모리 기반(재시작하면 초기화).
 
 ## 8. 마지막 검증 기록
-- 2026-10-24 고스톱 UI 개선 후: 백엔드 28 suites / 1616 tests 통과(첫 실행에서 3건 실패 → 연속 2회 재실행 모두 통과, 실패 테스트명은 기록 못 함 — 부하 의존 불안정 테스트로 추정), Vitest 22, Playwright E2E 29 통과·1 skip, `vite build` 성공.
-- 육안: 데스크톱 1280×800(2인·4인), 모바일 390×844, 휴대폰 가로 915×412 캡처로 확인.
-- 실서버(4000)는 이번 변경으로 **재시작하지 않음**(국진 변경까지만 반영된 상태).
+- 2026-10-24 스도쿠 추가 후: 백엔드 29 suites / 1626 tests(연속 2회 통과; 그 전 실행 한 번은 `heuristic`·`progress`·스도쿠 생성 속도 테스트가 부하로 실패 → 속도 기준을 판당 10ms 로 완화), Vitest 22, Playwright E2E 31 통과·1 skip(스도쿠: 입력/지우기/풀기→+1,000원), `vite build` 성공. 마이그레이션은 `prisma migrate diff` 로 스키마와 차이 없음 확인.
+- 육안: 스도쿠 데스크톱 1280×800 · 모바일 390×844 캡처 확인. 고스톱 UI 는 데스크톱(2인·4인)·모바일 세로·휴대폰 가로 확인.
+- 실서버(4000)는 **재시작하지 않음**(국진 변경까지만 반영, 새 마이그레이션도 미적용). 반영하려면 `claude.md` §2 서버 명령(`migrate deploy` 포함)으로 재시작.
 
 ## 9. Next Step
-- `TODO.md` 참고. 대기 중인 사용자 결정: (a) 고스톱 UI 개선 + 국진 보강 변경분 커밋 여부(실서버 재시작 포함), (b) 윷놀이 개선 목록(32개 제안, 파일로 저장 안 됨) 저장/구현 여부, (c) `TODO.md` 5번 섹션(로비·소셜) 착수 여부.
+- `TODO.md` 참고. 대기 중인 사용자 결정: (a) 실서버 재시작(고스톱 UI·스도쿠 반영, 마이그레이션 적용), (b) 윷놀이 개선 목록(32개 제안, 파일로 저장 안 됨) 저장/구현 여부, (c) `TODO.md` 5번 섹션(로비·소셜) 착수 여부.

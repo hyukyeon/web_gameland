@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import authRouter from './auth.js';
 import slotRouter from './slot.js';
+import sudokuRouter from './sudoku.js';
 import { attachSockets } from './sockets.js';
 import { snapshot as omokMetrics } from './omok/metrics.js';
 import { PICS_DIR, FRONTEND_DIST, UPLOAD_DIR } from './config.js';
@@ -22,6 +23,7 @@ export function createServer() {
   app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '1h', setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff') }));
   app.use('/api/auth', authRouter);
   app.use('/api/slot', slotRouter);
+  app.use('/api/sudoku', sudokuRouter);
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.get('/api/metrics/omok', (_req, res) => res.json(omokMetrics()));
 

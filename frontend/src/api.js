@@ -5,7 +5,7 @@ async function call(path, { method = 'GET', body, token, base = '/api/auth' } = 
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '요청에 실패했습니다.');
+  if (!res.ok) throw Object.assign(new Error(data.error || '요청에 실패했습니다.'), { status: res.status, data });
   return data;
 }
 
@@ -24,6 +24,9 @@ export const api = {
   gaepyeong: (token) => call('/gaepyeong', { method: 'POST', token }),
   slotStatus: (token) => call('/slot/status', { token, base: '/api' }),
   slotSpin: (token) => call('/slot/spin', { method: 'POST', token, base: '/api' }),
+  sudokuStatus: (token) => call('/sudoku/status', { token, base: '/api' }),
+  sudokuNew: (token, difficulty) => call('/sudoku/new', { method: 'POST', token, base: '/api', body: { difficulty } }),
+  sudokuSubmit: (token, id, board) => call('/sudoku/submit', { method: 'POST', token, base: '/api', body: { id, board } }),
   updateProfile: (token, nickname) => call('/profile', { method: 'PUT', token, body: { nickname } }),
   uploadAvatar: upload,
   deleteAvatar: (token) => call('/avatar', { method: 'DELETE', token }),

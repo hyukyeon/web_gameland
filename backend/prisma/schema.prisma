@@ -63,6 +63,9 @@ model User {
   // 슬롯머신 일일 한도(KST 자정 기준 초기화)
   dailySlotSpent   Int       @default(0)
   lastSlotPlayedAt DateTime?
+  // 스도쿠 일일 보상(KST 자정 기준 초기화): 오늘 보상을 받은 클리어 횟수와 마지막 클리어 시각
+  dailySudokuCleared  Int       @default(0)
+  lastSudokuClearedAt DateTime?
   createdAt    DateTime     @default(now())
   results      GameResult[]
 }
