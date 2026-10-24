@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { useApp } from '../store.jsx';
 import { cardImg, won, signed } from '../cards.js';
-import { Avatar } from './Avatar.jsx';
+import { Avatar, BotLevel } from './Avatar.jsx';
 import { Chat } from './Chat.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
 import { JokboHelp } from './JokboHelp.jsx';
@@ -208,6 +208,7 @@ function Seat({ pos, pid, p, view, isMe, nameOf, playerOf, turn, left, auto, win
         <div className="min-w-0 leading-tight">
           <div className="flex items-center gap-1 text-xs font-bold">
             <span className="max-w-[78px] truncate sm:max-w-[110px]">{nameOf(pid)}</span>
+            <BotLevel player={playerOf(pid)} />
             {pid === view.dealer && <span className="rounded bg-gold-500 px-1 text-[9px] font-black text-felt-900">선</span>}
           </div>
           <div className="text-[10px] text-gold-400">{playerOf(pid)?.bot ? '∞' : won(p.stack)}원</div>

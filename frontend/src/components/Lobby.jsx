@@ -10,7 +10,7 @@ import { useApp } from '../store.jsx';
 import { api } from '../api.js';
 import { won, signed } from '../cards.js';
 import { Chat } from './Chat.jsx';
-import { OPTION_LABELS, BETS } from './options.js';
+import { OPTION_LABELS, BETS, LEVELS } from './options.js';
 
 const SlotMachine = lazyNamed(() => import('./SlotMachine.jsx'), 'SlotMachine');
 const ProfilePanel = lazyNamed(() => import('./Profile.jsx'), 'ProfilePanel');
@@ -60,6 +60,58 @@ function CreateRoom({ onClose, game = 'gostop' }) {
         <div className="flex justify-end gap-2">
           <button className="btn btn-ghost" onClick={onClose}>취소</button>
           <button className="btn btn-gold" onClick={create}>만들기</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+const PRACTICE_KEY = 'practice.setup';
+const loadPractice = () => {
+  try {
+    return { level: 'normal', bet: 100, ...JSON.parse(localStorage.getItem(PRACTICE_KEY) || '{}') };
+  } catch {
+    return { level: 'normal', bet: 100 };
+  }
+};
+
+/** AI 1:1 연습 설정: 난이도 · 판돈 (마지막 선택을 기억) */
+function PracticeSetup({ onClose, game }) {
+  const { emit } = useApp();
+  const [cfg, setCfg] = useState(loadPractice);
+  const start = async () => {
+    try { localStorage.setItem(PRACTICE_KEY, JSON.stringify(cfg)); } catch { /* 저장소 없음 */ }
+    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet });
+    if (r.ok) onClose();
+  };
+  return (
+    <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="panel w-full max-w-md space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="AI 연습 설정">
+        <h2 className="text-lg font-black text-gold-400">🤖 AI 1:1 연습 {game === 'seotda' ? '· 섯다' : '· 고스톱'}</h2>
+        <div>
+          <p className="mb-1 text-xs text-slate-300">난이도</p>
+          <div className="grid gap-2">
+            {LEVELS.map(([k, label, desc]) => (
+              <button key={k} onClick={() => setCfg((c) => ({ ...c, level: k }))} aria-pressed={cfg.level === k} className={`rounded-lg px-3 py-2 text-left ring-1 transition ${cfg.level === k ? 'bg-gold-500 text-felt-900 ring-gold-300' : 'bg-white/5 ring-white/15 hover:bg-white/10'}`}>
+                <b>{cfg.level === k ? '✔ ' : ''}{label}</b>
+                <span className={`ml-2 text-xs ${cfg.level === k ? 'text-felt-900/80' : 'text-slate-400'}`}>{desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-slate-300">{game === 'seotda' ? '참가비' : '판돈 (1점당)'} — 연습이라 내 머니는 변하지 않아요</p>
+          <div className="grid grid-cols-4 gap-2">
+            {BETS.map((b) => (
+              <button key={b} onClick={() => setCfg((c) => ({ ...c, bet: b }))} aria-pressed={cfg.bet === b} className={`btn ${cfg.bet === b ? 'btn-gold' : 'btn-ghost'}`}>
+                {won(b)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn btn-ghost" onClick={onClose}>취소</button>
+          <button className="btn btn-gold" onClick={start}>시작하기</button>
         </div>
       </motion.div>
     </motion.div>
@@ -132,6 +184,7 @@ function SidePanel({ tab, setTab }) {
 export function Lobby() {
   const { user, rooms, lobbyChat, emit, send, logout, connected } = useApp();
   const [creating, setCreating] = useState(false);
+  const [practicing, setPracticing] = useState(false);
   const [game, setGame] = useState('gostop'); // 선택한 게임 탭
   const [tab, setTab] = useState('rank'); // 오른쪽(모바일에선 아래) 패널 탭
   const sideRef = React.useRef(null);
@@ -188,7 +241,7 @@ export function Lobby() {
             <h2 className="font-bold">{game === 'seotda' ? '🃏 섯다' : '🎴 고스톱'} 방 목록 ({gameRooms.length})</h2>
             <div className="flex gap-2">
               {(game === 'gostop' || game === 'seotda') && (
-                <button className="btn btn-ghost" title="AI 와 둘이서 연습 – 머니/전적에 반영되지 않습니다" onClick={() => emit('room:practice', { game })}>
+                <button className="btn btn-ghost" title="AI 와 둘이서 연습 – 머니/전적에 반영되지 않습니다" onClick={() => setPracticing(true)}>
                   🤖 AI 1:1 연습하기
                 </button>
               )}
@@ -236,6 +289,7 @@ export function Lobby() {
         </aside>
       </div>
       <AnimatePresence>{creating && <CreateRoom game={game} onClose={() => setCreating(false)} />}</AnimatePresence>
+      <AnimatePresence>{practicing && <PracticeSetup game={game} onClose={() => setPracticing(false)} />}</AnimatePresence>
     </div>
     </div>
   );

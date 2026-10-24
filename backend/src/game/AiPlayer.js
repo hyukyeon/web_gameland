@@ -39,6 +39,11 @@ export class AiPlayer {
         return { type: 'choose', cardId: this.bestOf(view.choice.options) };
       case 'gostop':
         return { type: this.shouldGo(view) ? 'go' : 'stop' };
+      case 'shodang': {
+        // 쇼당 응답: 남은 상대보다 앞서 있지 않으면 나가리 수락
+        const other = view.active.find((p) => p !== this.pid && p !== view.shodangBy);
+        return { type: 'shodangAnswer', accept: view.scores[this.pid].total <= (view.scores[other]?.total ?? 0) };
+      }
       default:
         return null;
     }

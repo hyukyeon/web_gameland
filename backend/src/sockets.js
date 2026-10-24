@@ -4,10 +4,12 @@ import { verifyToken, publicUser, displayName, avatarUrl, BOT_PREFIX } from './a
 import { bus } from './events.js';
 import { settleGame, settleSeotda, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
 import { SeotdaGame } from './seotda/SeotdaGame.js';
-import { SeotdaBot } from './seotda/SeotdaBot.js';
 import { achievementById, titleText } from './stats.js';
 import { GostopGame } from './game/GostopGame.js';
-import { HeuristicBot } from './game/HeuristicBot.js';
+import {
+  parseLevel, pickPersona, personaByKey, botDisplayName, botAvatar, botLine,
+  makeGostopBrain, makeSeotdaBrain, proxyGostopBrain, proxySeotdaBrain, gostopReactions, seotdaReactions,
+} from './bots.js';
 import { BET_OPTIONS, BOT_DELAY_SCALE, RECONNECT_GRACE_MS, SEOTDA_TURN_MS, SEOTDA_REMATCH_MS, GOSTOP_TURN_MS, AUTO_AFTER_TIMEOUTS, SEOTDA_VOTE_MS } from './config.js';
 
 const MIN_MONEY_MULT = 10; // 입장하려면 판돈 × 10 이상 보유
@@ -65,7 +67,7 @@ export function attachSockets(httpServer, corsOrigin) {
     opts: r.opts,
     ranked: isRankedRoom(r),
     spectators: r.spectators.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, online: p.online })),
-    players: r.players.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, ready: p.ready, online: p.online, offlineAt: p.offlineAt ?? null, bot: !!p.bot, auto: !!p.auto })),
+    players: r.players.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, ready: p.ready, online: p.online, offlineAt: p.offlineAt ?? null, bot: !!p.bot, auto: !!p.auto, ...(p.bot ? { level: p.level, style: p.style } : {}) })),
   });
   const emitRoom = (r) => io.to(`room:${r.id}`).emit('room:state', roomState(r));
 
@@ -79,6 +81,47 @@ export function attachSockets(httpServer, corsOrigin) {
     return !p || p.bot || !p.online || !!p.auto;
   };
   const sysChat = (room, text) => io.to(`room:${room.id}`).emit('room:chat', { system: true, text, ts: Date.now() });
+
+  /** 이 자리의 두뇌. 봇은 난이도·성향대로, 자리를 비운 사람은 가장 강한 두뇌로 대신 둔다. 한 판 동안 유지(카운팅 기억). */
+  function brainFor(room, pid, game) {
+    room.brains ??= new Map();
+    const key = `${game}:${pid}`;
+    if (!room.brains.has(key)) {
+      const p = playerOf(room, pid);
+      const cfg = { level: p?.level, style: p?.style };
+      room.brains.set(key, p?.bot ? (game === 'seotda' ? makeSeotdaBrain(pid, cfg) : makeGostopBrain(pid, cfg)) : game === 'seotda' ? proxySeotdaBrain(pid) : proxyGostopBrain(pid));
+    }
+    return room.brains.get(key);
+  }
+
+  /** 봇 계정 하나를 이 방의 개성 있는 플레이어로 만든다 (방에서 안 쓰는 개성 중 무작위) */
+  function botPlayer(room, u, level) {
+    const persona = pickPersona(room.players.filter((p) => p.bot).map((p) => p.persona));
+    return { id: u.id, username: botDisplayName(persona), avatar: botAvatar(persona), ready: true, online: true, bot: true, level: parseLevel(level), persona: persona.key, style: persona.style };
+  }
+
+  // ---------- 봇 말풍선 (상황별 반응) ----------
+  const BOT_TALK_COOLDOWN_MS = 6000;
+  /** 봇이 상황에 맞는 대사를 말풍선으로 (개성별 수다 정도 · 봇마다 쿨다운) */
+  function botSay(room, pid, situation, delayMs = 0, { force = false } = {}) {
+    const p = playerOf(room, pid);
+    if (!p?.bot) return;
+    const persona = personaByKey(p.persona);
+    room.botTalk ??= new Map();
+    const now = Date.now();
+    if (now + delayMs - (room.botTalk.get(pid) ?? 0) < BOT_TALK_COOLDOWN_MS * BOT_DELAY_SCALE) return;
+    const big = ['win', 'lose', 'draw'].includes(situation);
+    if (!force && Math.random() > persona.chatty * (big ? 1 : 0.55)) return;
+    const text = botLine(persona, situation);
+    if (!text) return;
+    room.botTalk.set(pid, now + delayMs);
+    const t = setTimeout(() => {
+      if (rooms.get(room.id) !== room || !playerOf(room, pid)) return;
+      io.to(`room:${room.id}`).emit('BROADCAST_EMOTE', { userId: pid, name: p.username, text, ts: Date.now(), bot: true });
+    }, delayMs);
+    t.unref?.();
+  }
+  const botIdsOf = (room) => room.players.filter((p) => p.bot).map((p) => p.id);
 
   /** 시간 초과 기록: 연속 AUTO_AFTER_TIMEOUTS 번이면 자동 진행으로 전환 */
   function noteTimeout(room, pid) {
@@ -166,6 +209,8 @@ export function attachSockets(httpServer, corsOrigin) {
   // ---------- 게임 진행 ----------
   async function handleGameResult(room, game, frames) {
     emitFrames(room, frames);
+    // 봇 반응: 해당 장면이 화면에 재생될 즈음 말풍선
+    for (const r of gostopReactions(frames, botIdsOf(room))) botSay(room, r.pid, r.situation, replayMs(frames.slice(0, r.frameIndex + 1)) * BOT_DELAY_SCALE);
     if (game.phase !== 'ended') return scheduleTurn(room, frames);
     const res = game.result;
     const pids = game.pids;
@@ -195,6 +240,10 @@ export function attachSockets(httpServer, corsOrigin) {
     }
     const overPayload = { result: res, payout, bet: room.bet, ranked };
     io.to(`room:${room.id}`).emit('game:over', overPayload);
+    for (const bid of botIdsOf(room)) {
+      if (!pids.includes(bid)) continue;
+      botSay(room, bid, res.draw || res.winner == null ? 'draw' : res.winner === bid ? 'win' : 'lose', (replayMs(frames) + 600) * BOT_DELAY_SCALE);
+    }
     // 연결이 끊겨 있던 사람은 돌아왔을 때 결과를 볼 수 있게 보관
     for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
     for (const p of room.players) pushUser(p.id);
@@ -351,9 +400,7 @@ export function attachSockets(httpServer, corsOrigin) {
     if (room.game !== game || game.turn !== botId) return;
     const view = game.view(botId);
     // 한 판 동안 같은 두뇌를 유지해 카드 카운팅 기억을 이어간다
-    room.brains ??= new Map();
-    if (!room.brains.has(botId)) room.brains.set(botId, new HeuristicBot(botId));
-    const act = room.brains.get(botId).decide(view);
+    const act = brainFor(room, botId, 'gostop').decide(view);
     let r = act ? applyBotAction(game, botId, act) : { ok: false };
     if (!r.ok) r = botFallback(game, botId, view);
     if (!r.ok) return console.error('bot action failed', view.phase, act, r.error);
@@ -382,11 +429,9 @@ export function attachSockets(httpServer, corsOrigin) {
     const t = setTimeout(() => {
       room.timers.delete('seotda-bot');
       if (room.game !== game || game.turn !== bot.id || game.phase !== 'betting') return;
-      room.brains ??= new Map();
-      if (!room.brains.has(bot.id)) room.brains.set(bot.id, new SeotdaBot(bot.id));
       let r = { ok: false };
       try {
-        r = game.act(bot.id, room.brains.get(bot.id).decide(game.view(bot.id)));
+        r = game.act(bot.id, brainFor(room, bot.id, 'seotda').decide(game.view(bot.id)));
       } catch (e) {
         console.error('seotda bot error', e);
       }
@@ -423,6 +468,7 @@ export function attachSockets(httpServer, corsOrigin) {
     if (room.game !== game) return;
     const last = events.filter((e) => e.type === 'action').at(-1) ?? null;
     emitSeotdaState(room, last);
+    for (const r of seotdaReactions(events, botIdsOf(room))) botSay(room, r.pid, r.situation, 500 * BOT_DELAY_SCALE);
     if (game.phase === 'betting') return startSeotdaTurn(room);
     clearSeotdaTimer(room);
     const res = game.result;
@@ -462,6 +508,8 @@ export function attachSockets(httpServer, corsOrigin) {
       sysChat(room, '정산 중 오류가 발생했습니다.');
     }
     io.to(`room:${room.id}`).emit('seotda:over', { result: res, payout, ante: room.bet, ranked });
+    // 결과 공개 연출(순차 뒤집기)이 끝날 즈음
+    for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winners.includes(bid) ? 'win' : 'lose', 2500 * BOT_DELAY_SCALE);
     for (const p of room.players) pushUser(p.id);
     announceUnlocked(room, unlocked);
     emitRoom(room);
@@ -871,7 +919,9 @@ export function attachSockets(httpServer, corsOrigin) {
       if (userRoom.has(uid)) return ack(cb, { ok: false, error: '이미 방에 참여 중입니다.' });
       const me = await prisma.user.findUnique({ where: { id: uid } });
       const type = payload?.game === 'seotda' ? 'seotda' : 'gostop';
-      const room = newRoom(me, `${displayName(me)}의 AI 연습`, BET_OPTIONS[0], parseOpts(payload?.opts), type);
+      // 연습 판돈은 고를 수 있다 (머니에는 영향 없음 — 결과 화면의 금액 체감용)
+      const bet = BET_OPTIONS.includes(Number(payload?.bet)) ? Number(payload.bet) : BET_OPTIONS[0];
+      const room = newRoom(me, `${displayName(me)}의 AI 연습`, bet, parseOpts(payload?.opts), type);
       rooms.set(room.id, room);
       userRoom.set(uid, room.id);
       const bot = await acquireBot(room.id);
@@ -880,7 +930,7 @@ export function attachSockets(httpServer, corsOrigin) {
         userRoom.delete(uid);
         return ack(cb, { ok: false, error: 'AI 봇을 준비하지 못했습니다.' });
       }
-      room.players.push({ id: bot.id, username: bot.username, ready: true, online: true, bot: true });
+      room.players.push(botPlayer(room, bot, payload?.level));
       room.players[0].ready = true;
       joinRoomChannel(socket, room);
       socket.emit('room:joined', { room: roomState(room), chat: room.chat });
@@ -890,7 +940,7 @@ export function attachSockets(httpServer, corsOrigin) {
     });
 
     // 대기방 'AI 봇 추가' (방장). 사람 2명 + 봇은 실전, 사람 1명 + 봇은 연습.
-    socket.on('room:addBot', async (_p, cb) => {
+    socket.on('room:addBot', async (payload, cb) => {
       const room = rooms.get(userRoom.get(uid));
       if (!room || room.status !== 'waiting' || room.hostId !== uid) return ack(cb, { ok: false, error: '방장만 대기 중에 추가할 수 있습니다.' });
       if (room.players.length >= MAX_PLAYERS) return ack(cb, { ok: false, error: '방이 가득 찼습니다.' });
@@ -900,9 +950,10 @@ export function attachSockets(httpServer, corsOrigin) {
         userRoom.delete(bot.id);
         return ack(cb, { ok: false, error: '봇을 추가할 수 없는 상태입니다.' });
       }
-      room.players.push({ id: bot.id, username: bot.username, ready: true, online: true, bot: true });
+      const bp = botPlayer(room, bot, payload?.level);
+      room.players.push(bp);
       resetReady(room);
-      io.to(`room:${room.id}`).emit('room:chat', { system: true, text: `${bot.username}이(가) 참가했습니다.`, ts: Date.now() });
+      io.to(`room:${room.id}`).emit('room:chat', { system: true, text: `${bp.username}이(가) 참가했습니다.`, ts: Date.now() });
       emitRoom(room);
       broadcastRooms();
       return ack(cb, { ok: true });

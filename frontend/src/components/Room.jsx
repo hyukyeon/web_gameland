@@ -5,6 +5,23 @@ import { won } from '../cards.js';
 import { Chat } from './Chat.jsx';
 import { Avatar } from './Avatar.jsx';
 import { OptionToggles } from './Lobby.jsx';
+import { LEVELS, LEVEL_LABEL, STYLE_LABEL } from './options.js';
+
+/** 방장용: 난이도를 골라 AI 봇 추가 */
+function AddBot({ emit }) {
+  const [open, setOpen] = React.useState(false);
+  if (!open) return <button className="btn btn-ghost !px-2 !py-0.5 text-xs text-slate-200" onClick={() => setOpen(true)}>🤖 AI 봇 추가</button>;
+  return (
+    <span className="flex items-center gap-1" role="group" aria-label="AI 난이도">
+      {LEVELS.map(([k, label]) => (
+        <button key={k} className="btn btn-ghost !px-2 !py-0.5 text-xs" title={`${label} 난이도 봇 추가`} onClick={() => { emit('room:addBot', { level: k }); setOpen(false); }}>
+          {label}
+        </button>
+      ))}
+      <button className="px-1 text-xs text-slate-400" aria-label="취소" onClick={() => setOpen(false)}>✕</button>
+    </span>
+  );
+}
 
 export function Room() {
   const { room, roomChat, user, emit, send } = useApp();
@@ -43,6 +60,7 @@ export function Room() {
                         {p.id === room.hostId && '👑 '}
                         {p.username}
                         {p.bot && ' 🤖'}
+                        {p.bot && p.level && <span className="ml-1 rounded bg-indigo-700 px-1 text-[10px] font-bold" title={STYLE_LABEL[p.style]}>{LEVEL_LABEL[p.level]} · {STYLE_LABEL[p.style]}</span>}
                         {p.id === user.id && <span className="ml-1 text-xs text-gold-400">(나)</span>}
                         {!p.online && <span className="ml-1 text-xs text-red-400">접속 끊김</span>}
                         {p.auto && <span className="ml-1 text-xs text-indigo-300">🤖 자동</span>}
@@ -61,9 +79,7 @@ export function Room() {
                     <>
                       <span>빈 자리</span>
                       {isHost && !spectator && i === room.players.length && (
-                        <button className="btn btn-ghost !px-2 !py-0.5 text-xs text-slate-200" onClick={() => emit('room:addBot')}>
-                          🤖 AI 봇 추가
-                        </button>
+                        <AddBot emit={emit} />
                       )}
                     </>
                   )}

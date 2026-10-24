@@ -133,14 +133,14 @@ describe('AI 1:1 연습 – 머니/전적 무변동', () => {
     await emit(a.s, 'room:practice');
     await sleep(100);
     const roomId = a.roomId;
-    const botName = a.room.players.find((p) => p.bot).username;
+    const botId = a.room.players.find((p) => p.bot).id;
     await emit(a.s, 'room:leave');
     await sleep(100);
     expect(a.rooms.some((x) => x.id === roomId)).toBe(false);
     const b = await mk('prac');
     await emit(b.s, 'room:practice');
     await sleep(100);
-    expect(b.room.players.find((p) => p.bot).username).toBe(botName);
+    expect(b.room.players.find((p) => p.bot).id).toBe(botId); // 같은 봇 계정 (개성/이름은 방마다 새로 정해짐)
     await emit(b.s, 'room:leave');
   });
 
@@ -155,6 +155,44 @@ describe('AI 1:1 연습 – 머니/전적 무변동', () => {
     expect((await emit(a.s, 'room:practice')).ok).toBe(false);
     await emit(a.s, 'room:leave');
     await emit(b.s, 'room:leave');
+  });
+});
+
+describe('AI 난이도 · 연습 판돈 · 봇 개성 (#15~#17)', () => {
+  test('연습: 난이도·판돈을 고르면 방에 반영되고, 봇은 개성 이름/아바타/성향을 가진다', async () => {
+    const a = await mk('lvl');
+    const emotes = [];
+    a.s.on('BROADCAST_EMOTE', (e) => emotes.push(e));
+    expect((await emit(a.s, 'room:practice', { level: 'hard', bet: 1000 })).ok).toBe(true);
+    await sleep(100);
+    expect(a.room.bet).toBe(1000);
+    const bot = a.room.players.find((p) => p.bot);
+    expect(bot).toMatchObject({ level: 'hard', bot: true });
+    expect(bot.username).toMatch(/^AI /);
+    expect(['aggressive', 'balanced', 'defensive']).toContain(bot.style);
+    await playHumans([a]);
+    expect(a.over.bet).toBe(1000);
+    expect(emotes.every((e) => e.userId === bot.id && e.bot === true)).toBe(true); // 봇 말풍선만 (사람은 안 보냄)
+    await emit(a.s, 'room:leave');
+  });
+
+  test('잘못된 난이도/판돈은 기본값(보통, 최소 판돈), 대기방 봇 추가도 난이도 지정·개성은 겹치지 않음', async () => {
+    const a = await mk('lvl');
+    await emit(a.s, 'room:practice', { level: 'godlike', bet: 777 });
+    await sleep(50);
+    expect(a.room.bet).toBe(100);
+    expect(a.room.players.find((p) => p.bot).level).toBe('normal');
+    await emit(a.s, 'room:leave');
+
+    await emit(a.s, 'room:create', { name: '봇방', bet: 100 });
+    await emit(a.s, 'room:addBot', { level: 'easy' });
+    await emit(a.s, 'room:addBot', { level: 'hard' });
+    await emit(a.s, 'room:addBot');
+    await sleep(50);
+    const bots = a.room.players.filter((p) => p.bot);
+    expect(bots.map((p) => p.level)).toEqual(['easy', 'hard', 'normal']);
+    expect(new Set(bots.map((p) => p.username)).size).toBe(3);
+    await emit(a.s, 'room:leave');
   });
 });
 

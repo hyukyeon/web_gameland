@@ -4,7 +4,7 @@ import { useApp } from '../store.jsx';
 import { groupCaptured, kindOf, monthOf, nearCombos, won, signed } from '../cards.js';
 import { Card } from './Card.jsx';
 import { Chat } from './Chat.jsx';
-import { Avatar } from './Avatar.jsx';
+import { Avatar, BotLevel } from './Avatar.jsx';
 import { EmoteBubble, EmoteButton } from './Emote.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
 import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
@@ -74,6 +74,7 @@ function Opponent({ view, pid, name, player, turn, timer }) {
           </span>
           {turn && <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1 }}>▶ </motion.span>}
           <span className="truncate">{name}</span>
+          <BotLevel player={player} />
           {isRest && <span className="ml-1 text-xs text-slate-300">(쉬는 중)</span>}
           {timer}
         </b>
