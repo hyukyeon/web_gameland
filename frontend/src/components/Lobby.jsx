@@ -3,6 +3,7 @@ import { SettingsButton } from './Settings.jsx';
 import { LobbyTour } from './Tutorial.jsx';
 import { ComingSoon } from './ComingSoon.jsx';
 import { GAMES } from '../games.js';
+import { getSkill, skillLabel } from '../omokSkill.js';
 import { Avatar } from './Avatar.jsx';
 import React, { Suspense, useEffect, useState } from 'react';
 import { lazyNamed } from '../lazy.js';
@@ -85,7 +86,7 @@ function PracticeSetup({ onClose, game }) {
   const [cfg, setCfg] = useState(loadPractice);
   const start = async () => {
     try { localStorage.setItem(PRACTICE_KEY, JSON.stringify(cfg)); } catch { /* 저장소 없음 */ }
-    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet });
+    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet, ...(cfg.level === 'auto' ? { skill: getSkill() } : {}) });
     if (r.ok) onClose();
   };
   return (
@@ -95,7 +96,7 @@ function PracticeSetup({ onClose, game }) {
         <div>
           <p className="mb-1 text-xs text-slate-300">난이도</p>
           <div className="grid gap-2">
-            {LEVELS.map(([k, label, desc]) => (
+            {(game === 'omok' ? [...LEVELS, ['auto', '🎯 자동', `내 실력(${skillLabel(getSkill())} · ${Math.round(getSkill() * 100)}점)에 맞춰 이기면 강해지고 지면 약해져요`]] : LEVELS).map(([k, label, desc]) => (
               <button key={k} onClick={() => setCfg((c) => ({ ...c, level: k }))} aria-pressed={cfg.level === k} className={`rounded-lg px-3 py-2 text-left ring-1 transition ${cfg.level === k ? 'bg-gold-500 text-felt-900 ring-gold-300' : 'bg-white/5 ring-white/15 hover:bg-white/10'}`}>
                 <b>{cfg.level === k ? '✔ ' : ''}{label}</b>
                 <span className={`ml-2 text-xs ${cfg.level === k ? 'text-felt-900/80' : 'text-slate-400'}`}>{desc}</span>

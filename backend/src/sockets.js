@@ -5,6 +5,8 @@ import { bus } from './events.js';
 import { settleGame, settleSeotda, settleOmok, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
 import { SeotdaGame } from './seotda/SeotdaGame.js';
 import { OmokGame } from './omok/OmokGame.js';
+import { OmokBot } from './omok/OmokBot.js';
+import { analyzeGame } from './omok/analysis.js';
 import { achievementById, titleText } from './stats.js';
 import { GostopGame } from './game/GostopGame.js';
 import {
@@ -21,6 +23,7 @@ const MAX_SPECTATORS = 8;
 const GIRI_MS = 1800; // 판 시작 기리 연출 시간 (클라이언트와 맞춘다)
 // 타짜 명대사 매크로: 클라이언트가 보낸 임의 문자열은 받지 않고 이 목록의 것만 방송한다
 export const EMOTES = ['묻고 더블로 가!', '싸늘하다...', '동작그만 밑장빼기냐?', '아수라발발타'];
+const OMOK_HINTS = 3; // 연습 판당 힌트 횟수
 const OPTION_KEYS = ['bonus', 'ppeokPay', 'chongtong', 'ttibak', 'nagariCarry'];
 
 /**
@@ -39,6 +42,7 @@ export function attachSockets(httpServer, corsOrigin) {
   const rooms = new Map(); // roomId -> room
   const userRoom = new Map(); // userId -> roomId
   const lobbyChat = [];
+  const analyzing = new Set(); // 복기 분석 중인 유저
   let roomSeq = 1;
 
   const clean = (t, max = 200) => (typeof t === 'string' ? t.trim().slice(0, max) : '');
@@ -70,7 +74,7 @@ export function attachSockets(httpServer, corsOrigin) {
     opts: r.opts,
     ranked: isRankedRoom(r),
     spectators: r.spectators.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, online: p.online })),
-    players: r.players.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, ready: p.ready, online: p.online, offlineAt: p.offlineAt ?? null, bot: !!p.bot, auto: !!p.auto, ...(p.bot ? { level: p.level, style: p.style } : {}) })),
+    players: r.players.map((p) => ({ id: p.id, username: p.username, avatar: p.avatar ?? null, title: p.title ?? null, ready: p.ready, online: p.online, offlineAt: p.offlineAt ?? null, bot: !!p.bot, auto: !!p.auto, ...(p.bot ? { level: p.level, style: p.style, ...(p.adaptive ? { adaptive: true, skill: p.skill } : {}) } : {}) })),
   });
   const emitRoom = (r) => io.to(`room:${r.id}`).emit('room:state', roomState(r));
 
@@ -91,7 +95,7 @@ export function attachSockets(httpServer, corsOrigin) {
     const key = `${game}:${pid}`;
     if (!room.brains.has(key)) {
       const p = playerOf(room, pid);
-      const cfg = { level: p?.level, style: p?.style };
+      const cfg = { level: p?.level, style: p?.style, strength: p?.skill ?? null };
       const make = { seotda: makeSeotdaBrain, omok: makeOmokBrain, gostop: makeGostopBrain };
       const proxy = { seotda: proxySeotdaBrain, omok: proxyOmokBrain, gostop: proxyGostopBrain };
       room.brains.set(key, p?.bot ? make[game](pid, cfg) : proxy[game](pid));
@@ -687,7 +691,7 @@ export function attachSockets(httpServer, corsOrigin) {
       console.error('omok settle failed', e);
       sysChat(room, '정산 중 오류가 발생했습니다.');
     }
-    const overPayload = { result: res, payout, ante: room.bet, ranked, black: game.black, white: game.white };
+    const overPayload = { result: res, payout, ante: room.bet, ranked, black: game.black, white: game.white, moves: game.moves.map((m) => [m.x, m.y]) };
     io.to(`room:${room.id}`).emit('omok:over', overPayload);
     for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winner == null ? 'draw' : res.winner === bid ? 'win' : 'lose', 900 * BOT_DELAY_SCALE);
     for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
@@ -703,6 +707,7 @@ export function attachSockets(httpServer, corsOrigin) {
     const ids = room.players.map((p) => p.id);
     const first = ids.includes(room.first) ? room.first : ids[Math.floor(Math.random() * ids.length)];
     room.game = new OmokGame(ids, { ante: room.bet, first });
+    room.hintsUsed = new Map();
     for (const v of viewers(room)) online.get(v.id)?.emit('omok:start', { view: room.game.view(), ranked: isRankedRoom(room) });
     emitRoom(room);
     broadcastRooms();
@@ -1043,7 +1048,12 @@ export function attachSockets(httpServer, corsOrigin) {
         userRoom.delete(uid);
         return ack(cb, { ok: false, error: 'AI 봇을 준비하지 못했습니다.' });
       }
-      room.players.push(botPlayer(room, bot, payload?.level));
+      // 적응형(오목): level 'auto' + 클라이언트가 기억한 실력(skill 0.1~1) → 연속 강도 봇
+      const adaptive = type === 'omok' && payload?.level === 'auto';
+      const skill = Math.min(1, Math.max(0.1, Number(payload?.skill) || 0.5));
+      const bp = botPlayer(room, bot, adaptive ? (skill < 0.35 ? 'easy' : skill < 0.75 ? 'normal' : 'hard') : payload?.level);
+      if (adaptive) Object.assign(bp, { adaptive: true, skill });
+      room.players.push(bp);
       room.players[0].ready = true;
       joinRoomChannel(socket, room);
       socket.emit('room:joined', { room: roomState(room), chat: room.chat });
@@ -1150,6 +1160,38 @@ export function attachSockets(httpServer, corsOrigin) {
       playerOf(room, uid).timeouts = 0;
       ack(cb, { ok: true });
       return handleOmokMove(room, game, r.move);
+    });
+    // 오목 힌트(연습 판 전용, 판당 3번): 내 차례에 어려움 AI 가 고른 수를 알려 준다
+    socket.on('omok:hint', (_p, cb) => {
+      const room = rooms.get(userRoom.get(uid));
+      const game = room?.game;
+      if (!room || room.type !== 'omok' || !game || game.phase !== 'playing') return ack(cb, { ok: false, error: '진행 중인 오목이 없습니다.' });
+      if (!game.pids.includes(uid)) return ack(cb, { ok: false, error: '관전자는 쓸 수 없습니다.' });
+      if (isRankedRoom(room)) return ack(cb, { ok: false, error: '힌트는 AI 연습 판에서만 쓸 수 있어요.' });
+      if (game.turn !== uid) return ack(cb, { ok: false, error: '내 차례에만 쓸 수 있어요.' });
+      const used = room.hintsUsed?.get(uid) ?? 0;
+      if (used >= OMOK_HINTS) return ack(cb, { ok: false, error: '이번 판 힌트를 모두 썼어요.' });
+      const [x, y] = new OmokBot({ level: 'hard' }).decide(game);
+      room.hintsUsed.set(uid, used + 1);
+      return ack(cb, { ok: true, x, y, left: OMOK_HINTS - used - 1 });
+    });
+    // 오목 복기 분석: 끝난 판의 수순(클라이언트가 결과 창에서 보냄)을 AI 가 분석. 동시에 한 건만.
+    socket.on('omok:analyze', async (payload, cb) => {
+      const moves = payload?.moves;
+      if (!Array.isArray(moves) || !moves.length || moves.length > 225 || !moves.every((m) => Array.isArray(m) && m.length === 2 && Number.isInteger(m[0]) && Number.isInteger(m[1])))
+        return ack(cb, { ok: false, error: '잘못된 기록입니다.' });
+      const replay = new OmokGame([1, 2]);
+      for (const [x, y] of moves) if (!replay.place(replay.turn, x, y).ok) return ack(cb, { ok: false, error: '규칙에 맞지 않는 기록입니다.' });
+      if (analyzing.has(uid)) return ack(cb, { ok: false, error: '이미 분석 중입니다.' });
+      analyzing.add(uid);
+      try {
+        return ack(cb, { ok: true, analysis: await analyzeGame(moves) });
+      } catch (e) {
+        console.error('omok analyze failed', e);
+        return ack(cb, { ok: false, error: '분석 중 오류가 발생했습니다.' });
+      } finally {
+        analyzing.delete(uid);
+      }
     });
     // AI 자동 진행 켜기/끄기 (본인)
     socket.on('room:auto', (payload, cb) => {

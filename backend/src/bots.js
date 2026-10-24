@@ -156,7 +156,7 @@ export function makeSeotdaBrain(pid, { level = DEFAULT_LEVEL, style = 'balanced'
 }
 
 // ---------- 오목 두뇌 ----------
-export const makeOmokBrain = (pid, { level = DEFAULT_LEVEL, style = 'balanced', rnd } = {}) => new OmokBot({ rnd, level, style });
+export const makeOmokBrain = (pid, { level = DEFAULT_LEVEL, style = 'balanced', strength = null, rnd } = {}) => new OmokBot({ rnd, level, style, strength });
 
 /** 사람 대신 둘 때(시간 초과·끊김·자동 진행)의 두뇌 */
 export const proxyGostopBrain = (pid) => new HeuristicBot(pid);

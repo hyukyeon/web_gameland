@@ -88,6 +88,26 @@ function twoWindows(a) {
   return n;
 }
 
+// 한 방향 9칸 문자열 → 패턴 요약. 칸 조합이 3^8 가지뿐이라 결과를 캐시한다 (A3: 패턴 평가 캐시)
+const DIR_CACHE = new Map();
+/** a: line() 이 만든 9칸 배열 (중심 4 는 'X'). 반환: { five, over, len, pts(5목 완성 칸 인덱스들), three, twos } — 캐시된 불변 객체 */
+export function dirInfo(a, exact) {
+  const key = (exact ? 'e' : 'f') + a.join('');
+  let r = DIR_CACHE.get(key);
+  if (r) return r;
+  const len = runAt(a, 4).len;
+  r = { five: isFive(len, exact), over: !isFive(len, exact) && len > 5, len, pts: [], three: false, twos: 0 };
+  if (len < 5) {
+    r.pts = fourPoints(a, exact);
+    if (!r.pts.length) {
+      if (hasOpenThree(a, exact)) r.three = true;
+      else r.twos = twoWindows(a);
+    }
+  }
+  DIR_CACHE.set(key, r);
+  return r;
+}
+
 /**
  * color 가 (x,y) 에 두었을 때(비어 있다고 가정) 4방향 패턴 요약.
  * five: 5목 완성 / over: 6목 이상(장목) / fours: 4(다음에 5목) 방향 수 / open4: 열린 4 방향 수 / threes: 열린 3 방향 수 / twos: 2 배열 수
@@ -96,17 +116,15 @@ export function patterns(board, x, y, color) {
   const exact = color === BLACK;
   const res = { five: false, over: false, fours: 0, open4: 0, threes: 0, twos: 0 };
   for (const d of DIRS) {
-    const a = line(board, x, y, d, color);
-    const len = runAt(a, 4).len;
-    if (isFive(len, exact)) res.five = true;
-    else if (len > 5) res.over = true;
-    if (len >= 5) continue;
-    const pts = fourPoints(a, exact);
-    if (pts.length) {
+    const info = dirInfo(line(board, x, y, d, color), exact);
+    if (info.five) res.five = true;
+    else if (info.over) res.over = true;
+    if (info.len >= 5) continue;
+    if (info.pts.length) {
       res.fours++;
-      if (pts.length >= 2) res.open4++;
-    } else if (hasOpenThree(a, exact)) res.threes++;
-    else res.twos += twoWindows(a);
+      if (info.pts.length >= 2) res.open4++;
+    } else if (info.three) res.threes++;
+    else res.twos += info.twos;
   }
   return res;
 }

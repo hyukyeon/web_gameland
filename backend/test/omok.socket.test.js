@@ -153,3 +153,52 @@ describe('오목 소켓', () => {
     expect(snap.moveCount).toBe(1);
   });
 });
+
+describe('오목 힌트·복기 분석·적응형 연습 (A7~A9)', () => {
+  test('연습 판 힌트: 내 차례에만, 판당 3번, 합법 수를 알려 준다', async () => {
+    const a = await mk('omH');
+    expect((await emit(a.s, 'room:practice', { game: 'omok', level: 'hard', bet: 100 })).ok).toBe(true);
+    await until(() => a.view);
+    await until(() => a.view.turn === mine(a), 8000);
+    const h = await emit(a.s, 'omok:hint');
+    expect(h.ok).toBe(true);
+    expect(h.left).toBe(2);
+    expect(a.view.board[h.y][h.x]).toBe(0);
+    expect((await emit(a.s, 'omok:hint')).left).toBe(1);
+    expect((await emit(a.s, 'omok:hint')).left).toBe(0);
+    const no = await emit(a.s, 'omok:hint');
+    expect(no.ok).toBe(false);
+    expect(no.error).toMatch(/모두/);
+    await emit(a.s, 'room:leave');
+  });
+
+  test('실전(사람 2명)에서는 힌트가 거절된다', async () => {
+    const { a, b } = await twoPlayerRoom();
+    const first = a.view.turn === mine(a) ? a : b;
+    const r = await emit(first.s, 'omok:hint');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/연습/);
+  });
+
+  test('적응형 연습: level auto + skill → 봇에 adaptive/skill 이 실린다', async () => {
+    const a = await mk('omA2');
+    expect((await emit(a.s, 'room:practice', { game: 'omok', level: 'auto', skill: 0.9, bet: 100 })).ok).toBe(true);
+    await until(() => a.room?.players.some((p) => p.bot));
+    const bot = a.room.players.find((p) => p.bot);
+    expect(bot).toMatchObject({ adaptive: true, skill: 0.9, level: 'hard' });
+    await emit(a.s, 'room:leave');
+  });
+
+  test('복기 분석: 결과의 수순을 보내면 실수를 짚어 준다 / 잘못된 기록은 거절', async () => {
+    const a = await mk('omN');
+    // 흑이 4목을 만들었는데 백이 막지 않은 기록
+    const moves = [[7, 7], [7, 8], [8, 7], [8, 8], [9, 7], [3, 3], [10, 7], [3, 4], [11, 7]];
+    const r = await emit(a.s, 'omok:analyze', { moves });
+    expect(r.ok).toBe(true);
+    expect(r.analysis.summary.white.blunders).toBeGreaterThanOrEqual(1);
+    expect(r.analysis.rows.every((x) => x.n >= 2)).toBe(true);
+    expect((await emit(a.s, 'omok:analyze', { moves: [[7, 7], [7, 7]] })).ok).toBe(false); // 같은 자리
+    expect((await emit(a.s, 'omok:analyze', { moves: 'x' })).ok).toBe(false);
+    expect((await emit(a.s, 'omok:analyze', { moves: Array(300).fill([0, 0]) })).ok).toBe(false);
+  });
+});

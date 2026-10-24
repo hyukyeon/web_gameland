@@ -70,3 +70,43 @@ test('오목판이 화면(가로/세로 모바일 포함)을 넘치지 않는다
   }
   await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/omok-desktop.png` : 'test-results/omok-desktop.png' });
 });
+
+test('오목 연습: 힌트(3번) · 자동 난이도 · 끝난 판 AI 복기 분석', async ({ page }) => {
+  test.setTimeout(120_000);
+  const { errors } = await signup(page);
+  await page.getByRole('button', { name: /오목/ }).first().click();
+  await startPractice(page, { game: 'omok', level: '🎯 자동', bet: '100' });
+  const board = page.getByRole('grid', { name: /오목판/ });
+  await expect(board).toBeVisible();
+  await expect(page.getByLabel(/AI 난이도/)).toBeVisible();
+
+  // 힌트: 내 차례에 누르면 남은 횟수가 줄고 추천 칸이 표시된다
+  const hint = page.getByRole('button', { name: /힌트/ });
+  await expect(hint).toBeEnabled({ timeout: 15_000 });
+  await expect(hint).toHaveText(/\(3\)/);
+  await hint.click();
+  await expect(hint).toHaveText(/\(2\)|\(3\)/); // 흑 선공이면 내 차례에 바로, 아니면 봇이 둔 뒤 활성화
+  await expect.poll(async () => (await hint.textContent()) ?? '', { timeout: 5000 }).toMatch(/\(2\)/);
+
+  // 흩뿌려 두며 판이 끝날 때까지 (봇이 5목을 만든다)
+  const over = page.getByRole('dialog', { name: '대국 결과' });
+  const cells = board.getByRole('gridcell', { name: /빈 자리/ });
+  for (let i = 0; i < 60 && !(await over.count()); i++) {
+    const enabled = board.locator('[role="gridcell"]:not([disabled])');
+    if (await enabled.count()) {
+      const n = await enabled.count();
+      await enabled.nth((i * 37) % n).click({ timeout: 3000 }).catch(() => {});
+    }
+    await page.waitForTimeout(250);
+  }
+  void cells;
+  await expect(over).toBeVisible({ timeout: 30_000 });
+  await expect(over.getByText(/자동 난이도/)).toBeVisible();
+
+  await over.getByRole('button', { name: /복기 분석/ }).click();
+  await expect(over.getByLabel('복기 분석 결과')).toBeVisible({ timeout: 20_000 });
+  await expect(over.getByText(/정확도/).first()).toBeVisible();
+  if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/omok-analysis.png` });
+  await over.getByRole('button', { name: '대기실로' }).click();
+  expect(errors).toEqual([]);
+});

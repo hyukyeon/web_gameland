@@ -11,6 +11,7 @@ import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { useShortLandscape } from '../settings.js';
 import { hk } from '../keys.js';
 import { sfx } from '../sound.js';
+import { adjustSkill, getSkill, skillLabel } from '../omokSkill.js';
 
 const N = 15;
 const STARS = new Set(['3,3', '3,11', '7,7', '11,3', '11,11']); // 화점
@@ -48,7 +49,7 @@ function Stone({ color, ghost = false, fresh = false, mark = false, win = false 
   );
 }
 
-function Board({ view, myColor, canPlay, onPlace }) {
+function Board({ view, myColor, canPlay, onPlace, hint }) {
   const [hover, setHover] = useState(null);
   const refs = useRef({});
   const winCells = useMemo(() => new Set((view.result?.line ?? []).map(([x, y]) => `${x},${y}`)), [view.result]);
@@ -97,6 +98,9 @@ function Board({ view, myColor, canPlay, onPlace }) {
               {STARS.has(key) && c === 0 && <span className="absolute left-1/2 top-1/2 h-[18%] w-[18%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#3b2a14]" aria-hidden="true" />}
               {c !== 0 && <Stone color={c} fresh={isLast && view.moveCount > 0} mark={isLast && view.phase === 'playing'} win={winCells.has(key)} />}
               {c === 0 && free && hover === key && myColor && <Stone color={myColor} ghost />}
+              {hint && hint.x === x && hint.y === y && c === 0 && (
+                <motion.span className="pointer-events-none absolute inset-[6%] rounded-full ring-4 ring-sky-400" animate={{ scale: [1, 1.25, 1], opacity: [1, 0.55, 1] }} transition={{ repeat: Infinity, duration: 1.1 }} aria-hidden="true" />
+              )}
               {isLast && view.phase === 'ended' && <span className="absolute left-1/2 top-1/2 z-[1] h-[26%] w-[26%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500" aria-hidden="true" />}
             </button>
           );
@@ -129,7 +133,52 @@ function PlayerStrip({ pid, color, playerOf, nameOf, isTurn, left, auto, win, yo
   );
 }
 
-function ResultModal({ over, view, nameOf, you, onClose }) {
+const TAG = { blunder: ['실수', 'bg-red-600'], mistake: ['악수', 'bg-amber-600'] };
+
+/** 복기 분석 패널 (A9): 결과 창에서 눌러 AI 분석을 받는다 */
+function Analysis({ moves, nameOf, view, emit }) {
+  const [st, setSt] = useState({ phase: 'idle' });
+  const run = async () => {
+    setSt({ phase: 'loading' });
+    const r = await emit('omok:analyze', { moves });
+    setSt(r?.ok ? { phase: 'done', a: r.analysis } : { phase: 'error', msg: r?.error ?? '분석하지 못했어요.' });
+  };
+  if (st.phase === 'idle') return <button className="btn btn-ghost w-full text-sm" onClick={run}>🔍 AI 복기 분석</button>;
+  if (st.phase === 'loading') return <p className="rounded-lg bg-black/30 p-2 text-xs text-slate-300" role="status">AI 가 수순을 분석하는 중…</p>;
+  if (st.phase === 'error') return <p className="rounded-lg bg-red-900/60 p-2 text-xs" role="alert">{st.msg}</p>;
+  const { rows, summary } = st.a;
+  const bad = rows.filter((r) => r.tag).sort((x, y) => y.loss - x.loss).slice(0, 8).sort((x, y) => x.n - y.n);
+  return (
+    <div className="space-y-2 rounded-lg bg-black/30 p-2 text-left text-xs" aria-label="복기 분석 결과">
+      <div className="grid grid-cols-2 gap-2">
+        {[['black', view.black, '⚫'], ['white', view.white, '⚪']].map(([k, pid, icon]) => (
+          <div key={k} className="rounded bg-white/5 p-1.5">
+            <div className="truncate font-bold">{icon} {nameOf(pid)}</div>
+            <div className="text-slate-300">정확도 <b className="text-gold-400">{summary[k].accuracy}%</b></div>
+            <div className="text-slate-300">실수 {summary[k].blunders} · 악수 {summary[k].mistakes}</div>
+          </div>
+        ))}
+      </div>
+      {bad.length === 0 ? (
+        <p className="text-center text-slate-300">눈에 띄는 실수가 없는 깔끔한 대국이에요 👏</p>
+      ) : (
+        <ul className="max-h-40 space-y-1 overflow-y-auto">
+          {bad.map((r) => (
+            <li key={r.n} className="flex items-center justify-between gap-2">
+              <span className="truncate">{r.n}수 {r.color === 1 ? '⚫' : '⚪'} {coord(r.x, r.y)}{r.bestWin ? ' (이길 수 있었어요)' : r.playedLose ? ' (지는 수)' : ''}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                <span className="text-slate-400">추천 {coord(r.bestX, r.bestY)}</span>
+                <span className={`rounded px-1 font-black text-white ${TAG[r.tag][1]}`}>{TAG[r.tag][0]}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ResultModal({ over, view, nameOf, you, onClose, emit, skillNote }) {
   const res = over.result;
   const d = over.payout?.delta?.[you] ?? 0;
   const draw = res.winner == null;
@@ -137,7 +186,7 @@ function ResultModal({ over, view, nameOf, you, onClose }) {
   const why = res.kind === 'forfeit' ? '상대가 나가서 기권승 처리됐어요.' : res.kind === 'full' ? '더 둘 자리가 없어 무승부예요.' : '오목 완성! (5개 연속)';
   return (
     <motion.div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div role="dialog" aria-label="대국 결과" className="panel w-full max-w-sm space-y-3 bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
+      <motion.div role="dialog" aria-label="대국 결과" className="panel max-h-[92vh] w-full max-w-sm space-y-3 overflow-y-auto bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
         <h2 className="text-2xl font-black text-gold-400">{draw ? '🤝 무승부' : mineWin ? '🎉 승리!' : res.winner ? `${nameOf(res.winner)} 승리` : '게임 종료'}</h2>
         <p className="text-sm text-slate-300">{why}</p>
         {!draw && <p className="text-xs text-slate-400">{colName(view.black === res.winner ? 1 : 2)}돌 {nameOf(res.winner)} · 총 {view.moveCount}수</p>}
@@ -150,7 +199,9 @@ function ResultModal({ over, view, nameOf, you, onClose }) {
           ))}
         </div>
         {over.ranked === false && <p className="text-xs text-slate-400">AI 연습 판이라 머니·전적에는 반영되지 않아요.</p>}
+        {skillNote && <p className="rounded bg-sky-900/60 px-2 py-1 text-xs" role="status">🎯 자동 난이도: {skillNote}</p>}
         {d !== 0 && <p className="text-xs text-slate-300">참가비 {won(over.ante)}원 기준</p>}
+        {over.moves?.length > 1 && <Analysis moves={over.moves} nameOf={nameOf} view={view} emit={emit} />}
         <button className="btn btn-gold w-full" onClick={onClose} {...hk('Escape Enter', 'Esc')}>대기실로</button>
       </motion.div>
     </motion.div>
@@ -196,7 +247,11 @@ export function OmokBoard() {
   const playing = view.phase === 'playing';
   const myTurn = playing && view.turn === you && !spectator;
   const [pending, setPending] = useState(false);
-  useEffect(() => setPending(false), [view.moveCount]);
+  const [hint, setHint] = useState(null); // { x, y } 추천 수 표시
+  const [hintsLeft, setHintsLeft] = useState(3);
+  const [skillNote, setSkillNote] = useState(null);
+  useEffect(() => { setPending(false); setHint(null); }, [view.moveCount]);
+  useEffect(() => { if (view.moveCount === 0) { setHintsLeft(3); setSkillNote(null); } }, [view.moveCount]);
 
   useEffect(() => {
     if (!msg) return undefined;
@@ -215,10 +270,24 @@ export function OmokBoard() {
     }
   };
 
-  // 결과 효과음
+  const practice = room?.ranked === false && !spectator;
+  const adaptiveBot = room?.players.find((p) => p.bot && p.adaptive);
+  const askHint = async () => {
+    if (!myTurn || pending) return;
+    const r = await emit('omok:hint');
+    if (r?.ok) { setHint({ x: r.x, y: r.y }); setHintsLeft(r.left); sfx('click'); }
+    else setMsg(r?.error ?? '힌트를 쓸 수 없어요.');
+  };
+
+  // 결과 효과음 + 자동 난이도 실력 갱신
   useEffect(() => {
     if (!omokOver) return;
     const d = omokOver.result.winner == null ? 0 : omokOver.result.winner === you ? 1 : -1;
+    if (adaptiveBot && !spectator) {
+      const before = getSkill();
+      const after = adjustSkill(d > 0 ? 'win' : d < 0 ? 'lose' : 'draw');
+      setSkillNote(`${skillLabel(before)} ${Math.round(before * 100)}점 → ${skillLabel(after)} ${Math.round(after * 100)}점`);
+    }
     sfx(d > 0 ? 'win' : d < 0 ? 'lose' : 'draw');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [omokOver]);
@@ -256,12 +325,17 @@ export function OmokBoard() {
           <PlayerStrip pid={bottom} color={colorOf(bottom)} playerOf={playerOf} nameOf={nameOf} isTurn={playing && view.turn === bottom} left={view.turn === bottom ? left : null} auto={turnAuto && view.turn === bottom} win={view.result?.winner === bottom} you={you} align={wide ? 'left' : 'right'} />
         </div>
         <div className={wide ? 'h-full max-h-[calc(100vh-70px)] aspect-square' : 'w-full max-w-[min(100%,calc(100vh-250px))]'}>
-          <Board view={view} myColor={myColor} canPlay={myTurn && !pending} onPlace={place} />
+          <Board view={view} myColor={myColor} canPlay={myTurn && !pending} onPlace={place} hint={hint} />
         </div>
       </div>
 
       <div className="relative z-[59] flex min-h-[40px] items-center justify-center gap-2 rounded-xl bg-black/45 p-1.5 text-sm">
         {!spectator && <EmoteButton />}
+        {practice && playing && (
+          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1 text-sm" disabled={!myTurn || pending || hintsLeft <= 0} onClick={askHint} title="AI 가 추천하는 수를 알려 줘요 (연습 판당 3번)" {...hk('h')}>
+            💡 힌트 ({hintsLeft})
+          </button>
+        )}
         <AnimatePresence mode="wait">
           {msg ? (
             <motion.span key="err" role="alert" className="rounded bg-red-700 px-3 py-1 font-bold" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>🚫 {msg}</motion.span>
@@ -282,7 +356,7 @@ export function OmokBoard() {
           </motion.div>
         )}
       </AnimatePresence>
-      <AnimatePresence>{omokOver && <ResultModal key="over" over={omokOver} view={view} nameOf={nameOf} you={you} onClose={dismissOmok} />}</AnimatePresence>
+      <AnimatePresence>{omokOver && <ResultModal key="over" over={omokOver} view={view} nameOf={nameOf} you={you} onClose={dismissOmok} emit={emit} skillNote={skillNote} />}</AnimatePresence>
     </div>
   );
 }
