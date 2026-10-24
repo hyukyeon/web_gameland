@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { io } from 'socket.io-client';
 import { api } from './api.js';
 import { sfx, sfxForFrame } from './sound.js';
+import { speedScale } from './settings.js';
 
 /** 직전 프레임 대비 새로 완성된 족보(홍단/청단/초단/고도리/N광) */
 const COMBO_RE = /^(홍단|청단|초단|고도리|\d광)$/;
@@ -110,7 +111,7 @@ export function AppProvider({ children }) {
       lastFrame.current = f;
       setView(f);
       if (f.banner) setBanner({ ...f.banner, key: `${Date.now()}-${Math.random()}` });
-      await sleep(f.banner ? BANNER_MS : FRAME_MS);
+      await sleep((f.banner ? BANNER_MS : FRAME_MS) * speedScale());
     }
     if (my === epoch.current) {
       running.current = false;

@@ -1,3 +1,5 @@
+import { getSettings, subscribeSettings, vibrate } from './settings.js';
+
 // 효과음: 외부 음원 없이 Web Audio 로 합성한다. 브라우저 자동재생 정책 때문에 첫 사용자 입력 뒤에 컨텍스트가 만들어진다.
 let ctx = null;
 let master = null;
@@ -14,7 +16,7 @@ function ac() {
     if (!AC) return null;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.5;
+    master.gain.value = 0.7 * getSettings().sfxVolume;
     master.connect(ctx.destination);
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
@@ -206,7 +208,11 @@ const SOUNDS = {
   },
 };
 
+// 소리와 함께 울리는 진동 (효과음을 꺼도 진동 설정이 켜져 있으면 울린다)
+const HAPTIC = { turn: 35, combo: [40, 60, 40], alert: [25, 40, 25], win: [60, 40, 120], lose: 220, ppeok: [80, 40, 80], bomb: [50, 30, 90] };
+
 export function sfx(name) {
+  if (HAPTIC[name]) vibrate(HAPTIC[name]);
   if (!enabled) return;
   try {
     SOUNDS[name]?.();
@@ -229,7 +235,7 @@ function bgmEl() {
   if (!bgm && typeof Audio !== 'undefined') {
     bgm = new Audio('/bgm.mp3');
     bgm.loop = true;
-    bgm.volume = 0.3;
+    bgm.volume = 0.75 * getSettings().bgmVolume;
   }
   return bgm;
 }
@@ -237,8 +243,13 @@ function bgmEl() {
 function syncBgm() {
   const a = bgmEl();
   if (!a) return;
-  if (bgmOn && bgmWanted && !document.hidden) a.play().catch(() => {});
-  else a.pause();
+  try {
+    // 오래된 브라우저(와 jsdom)는 play() 가 Promise 를 돌려주지 않는다
+    if (bgmOn && bgmWanted && !document.hidden) Promise.resolve(a.play()).catch(() => {});
+    else a.pause();
+  } catch {
+    /* 재생 미지원 */
+  }
 }
 
 export const isBgmOn = () => bgmOn;
@@ -254,8 +265,15 @@ export function setBgmOn(on) {
 }
 
 export const isSoundOn = () => enabled;
+const soundListeners = new Set();
+/** 효과음 켜짐/꺼짐이 바뀔 때 (여러 버튼의 표시를 맞춘다) */
+export function onSoundChange(fn) {
+  soundListeners.add(fn);
+  return () => soundListeners.delete(fn);
+}
 export function setSoundOn(on) {
   enabled = on;
+  soundListeners.forEach((f) => f(on));
   try {
     localStorage.setItem('gostop.sound', on ? 'on' : 'off');
   } catch {
@@ -295,3 +313,9 @@ if (typeof document !== 'undefined') {
     if (e.target.closest?.('button')) sfx('click');
   });
 }
+
+// 설정에서 음량을 바꾸면 바로 반영
+subscribeSettings((st) => {
+  if (master) master.gain.value = 0.7 * st.sfxVolume;
+  if (bgm) bgm.volume = 0.75 * st.bgmVolume;
+});

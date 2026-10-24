@@ -27,8 +27,9 @@ export function createServer() {
   if (fs.existsSync(FRONTEND_DIST)) {
     // 해시가 붙은 청크(/assets)는 내용이 바뀌면 이름도 바뀌므로 오래 캐시, index.html 은 매번 확인
     app.use('/assets', express.static(path.join(FRONTEND_DIST, 'assets'), { maxAge: '1y', immutable: true }));
-    app.use(express.static(FRONTEND_DIST, { setHeaders: (res, file) => file.endsWith('.html') && res.setHeader('Cache-Control', 'no-cache') }));
-    app.get(/^\/(?!api|pics|uploads|assets|socket\.io).*/, (_req, res) => {
+    // index.html·서비스 워커·매니페스트는 새 배포가 바로 반영되도록 매번 확인
+    app.use(express.static(FRONTEND_DIST, { setHeaders: (res, file) => /\.(html|webmanifest)$|[\\/]sw\.js$/.test(file) && res.setHeader('Cache-Control', 'no-cache') }));
+    app.get(/^\/(?!api|pics|uploads|assets|icons|bots|socket\.io).*/, (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
     });

@@ -166,3 +166,21 @@
 - **#14 판 액션 기록**: 테이블 왼쪽 위 접이식 '📜 판 기록'(누가 무엇을 얼마, 그때 팟, 올인/자리 비움, 끝나면 결과 줄). 열림 상태는 localStorage 에 기억(기본: 넓은 화면만 열림). 서버 `view.log` 를 최근 12 → 40개로 늘림. 재경기/묻고 더블은 새 판이라 기록도 새로 시작.
 - 덤: 자동 진행 중 버튼 문구가 모바일 상단 바를 밀어내던 문제 → 모바일은 '🤖 끄기'.
 - 검증: 백엔드 19 suites / 1469 tests (전체 실행 시 `heuristic.test.js` 의 '결정당 최대 지연 < 10ms' 2개가 부하로 12~14ms 가 나와 실패, 단독 실행은 통과 — 이번 변경과 무관한 타이밍 테스트). Playwright(임시 서버 4100): 섯다 연습 데스크톱/모바일(배분, 쪼기 반쯤 밀기·공개, 금액 버튼, 칩, 순차 공개, 결과), 고스톱 연습 데스크톱/모바일(규칙 도움말, '삼광 비상'·'고도리 비상' 팝업/배지, 정산 연출) — 콘솔 에러 없음. 3인 이상 섯다의 순차 공개와 다인 칩 이동은 브라우저로는 확인하지 못함(같은 코드 경로).
+
+## ✅ TODO 대번호 4·6·7 (#15~#17, #23~#30) 구현 (2026-10-24)
+- **#27 git**: 저장소 초기화(`main`), `.gitignore`(node_modules, dist, dev.db, uploads, .env, 로그, test-results). 항목별로 커밋. 이후 작업도 커밋 단위로 진행 가능.
+- **#28 보안**: `NODE_ENV=production` 이면 `JWT_SECRET`(16자 이상, 기본값 금지) 없을 때 서버 시작 거부, 개발 모드는 경고 로그. `src/rateLimit.js`(메모리 고정 창) — 로그인 1분 10회 / 가입 1시간 5회(IP 기준, 429 + Retry-After). `LOGIN_RATE_MAX`/`REGISTER_RATE_MAX` 로 조절(0=끔, 테스트 기본 끔), 프록시 뒤면 `TRUST_PROXY=1`. 테스트 `security.test.js`.
+- **#29 코드 스플리팅**: GameBoard·SeotdaBoard·SlotMachine·Profile lazy load(`lazy.js lazyNamed`: 새 배포로 옛 청크가 없으면 1회 새로고침), react/motion/socket 벤더 청크 분리(경고 해소, 첫 화면 앱 코드 44KB). 방 입장 시 게임 화면 청크 미리 받음. 서버: `/assets` 1년 immutable, index.html·sw.js·manifest no-cache, 없는 청크는 index.html 대신 404.
+- **#15~#17 AI** (`backend/src/bots.js`):
+  - 난이도: 고스톱 easy = AiPlayer + 실수 40% + 무모한 고 / normal = AiPlayer + 실수 12% / hard = HeuristicBot(카운팅). 섯다 easy = 헤픈 콜·상대 수 무시 / normal = 기존 + 15% 실수 / hard = 압박 반영·가치 베팅·허세 절제. 시뮬레이션으로 easy < normal < hard 확인(고스톱 2000판·섯다 20000판). 사람 대행(시간 초과·끊김·자동)은 항상 hard.
+  - 연습 판돈: `room:practice {game, level, bet}`(BET_OPTIONS, 잘못되면 100/보통). `room:addBot {level}`. 로비 '연습 설정' 모달(마지막 선택 기억), 대기실 봇 추가 시 난이도 선택, 좌석 이름 옆 하/중/상 배지.
+  - 개성 8종(박사장·순자 할매·신입 민수·샤크·김교수·행운이·한탕 최씨·스님): 이름 `AI ○○`, 아바타 `public/bots/*.svg`, 성향(공격/균형/수비 → 고 기준·섯다 베팅/허세), 방 안에서 겹치지 않게 배정. 상황별 말풍선(뻑/상대 뻑/고/상대 고/폭탄·싹쓸이/크게 올림/다이/승·패) — 프레임 재생 시점에 맞춰 `BROADCAST_EMOTE {bot:true}`, 개성별 수다 확률 + 봇당 6초 쿨다운. DB 봇 계정(AI봇N)은 그대로.
+  - AiPlayer 에 쇼당 응답 추가. 테스트 `bots.test.js` + bot.test.js 소켓 케이스.
+- **#23 설정** (`settings.js`, `components/Settings.jsx`, 로비·게임 상단 ⚙️): 효과음/배경음 켜기·음량, 연출 속도(느리게 1.35/보통/빠르게 0.6 — 고스톱 프레임·정산 연출·섯다 배분/공개에 적용), 카드 크기(CSS `--cs-user` 0.88/1/1.15), 진동, 단축키 표시, 튜토리얼 다시 보기, 앱 설치. 게임 상단 🎵 버튼은 ⚙️ 로 대체(🔊 빠른 끄기는 유지).
+- **#24 튜토리얼** (`components/Tutorial.jsx`): 아직 한 판도 안 한 사용자에게 로비 스포트라이트 7단계(게임 선택 → AI 연습 → 실전 방 → 내 정보 → 설정), 출석 보상 등 다른 모달이 닫힌 뒤 표시, ←/→/Enter/Esc. 고스톱 첫 내 차례에 한 번짜리 힌트(`OnceHint`).
+- **#25 모바일**: 휴대폰 가로 모드(높이 500px 이하) — 카드 0.72배, 고스톱 상대 뒷면 줄·보조 문구 숨김, 섯다 전용 좌석 배치 + 베팅 바를 오른쪽 아래로(`useShortLandscape`). 진동(내 차례·족보·비상·승패·뻑·폭탄). PWA: `manifest.webmanifest`, 아이콘(svg + 192/512/maskable/apple PNG), `public/sw.js`(빌드 청크·화투패 캐시, API/소켓/음원 제외, 운영 빌드에서만 등록), 설치 버튼.
+- **#26 접근성**: 짝 맞는 패에 색 외 🔗 배지, 카드 aria-label("3월 광 (짝 맞음)")·role=button·Tab/Enter, `:focus-visible` 테두리, `MotionConfig reducedMotion="user"`, 모달 role=dialog. 키보드(`keys.js` data-hotkey): 1~0 손패/바닥 선택, D 더미·다이, G/S 고/스톱, Y/N 예/아니오, C/H/B/T 섯다 베팅, V 바로 보기, ? 도움말, Esc 닫기.
+- **#30 프론트 테스트**: vitest + jsdom + Testing Library 단위 테스트 22개(`frontend/test/unit`: cards/nearCombos, settings, 단축키, 컴포넌트) — `npm test`. Playwright E2E 11개(`frontend/test/e2e`, 데스크톱+모바일: 튜토리얼, 설정 저장, PWA, 고스톱 연습(난이도·판돈·키보드·자동 진행·정산), 가로 모드 넘침, 섯다 연습(V/C 단축키)) — `npm run test:e2e` 가 빌드 후 임시 DB 백엔드(4199)를 띄움(`test/e2e/server.mjs`, 실제 dev.db 미사용). 받아 둔 크로미움 경로는 `PW_CHROMIUM` 으로 지정 가능.
+- 버그 수정: 튜토리얼 '다음' 연타 시 퇴장 애니메이션 중인 이전 카드가 눌려 단계가 안 넘어가던 문제, 모바일 로비 방 목록 행/헤더가 줄바꿈되지 않아 화면이 넓어질 수 있던 문제, 대기실 봇 배지 잘림, jsdom/구형 브라우저에서 `audio.play()` 가 Promise 를 안 돌려줄 때 예외.
+- 검증: 백엔드 21 suites / 1490 tests(전체 실행 3회 중 2회 전부 통과, 1회는 기존 `heuristic.test.js` '결정당 최대 지연 < 10ms' 타이밍 실패 — 부하 의존. 그 전에 `sockets.test.js` 1건이 전체 실행에서 한 번 실패했으나 단독 3회·이후 전체 실행에서는 통과, 원인 미확인). 프론트 단위 22 통과, E2E 11 통과(1개는 모바일 전용이라 데스크톱에서 skip). 스크린샷으로 튜토리얼·연습 설정·설정·대기실·봇 말풍선·가로 모드 확인.
+- 남은 것: 대번호 5(로비·소셜 #18~#22). 운영 배포 시 `NODE_ENV=production JWT_SECRET=...` 필수. 같은 공인 IP 뒤 여러 명이 가입하면 가입 레이트 리밋(1시간 5개)에 걸릴 수 있음 → `REGISTER_RATE_MAX` 조절.

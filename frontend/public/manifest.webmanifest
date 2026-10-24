@@ -1,0 +1,18 @@
+{
+  "name": "강원랜드 — 고스톱 · 섯다 · 슬롯",
+  "short_name": "강원랜드",
+  "description": "실시간 멀티플레이 화투 카지노 (고스톱 · 섯다 · 슬롯머신)",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1f17",
+  "theme_color": "#7f1d1d",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

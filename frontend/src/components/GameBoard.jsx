@@ -7,6 +7,10 @@ import { Chat } from './Chat.jsx';
 import { Avatar, BotLevel } from './Avatar.jsx';
 import { EmoteBubble, EmoteButton } from './Emote.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
+import { speedScale } from '../settings.js';
+import { hk } from '../keys.js';
+import { SettingsButton } from './Settings.jsx';
+import { OnceHint } from './Tutorial.jsx';
 import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { sfx } from '../sound.js';
 import { GostopHelp } from './GostopHelp.jsx';
@@ -81,12 +85,12 @@ function Opponent({ view, pid, name, player, turn, timer }) {
         <span className="shrink-0 text-xs text-slate-300">패 {cnt}</span>
       </div>
       {!isRest && <ScoreChip view={view} pid={pid} />}
-      <div className="mt-1 flex h-[42px] items-end">
+      <div className="landscape-hide mt-1 flex h-[42px] items-end">
         {Array.from({ length: cnt }).map((_, i) => (
           <Card key={`b${pid}-${i}`} back size="xs" style={{ marginLeft: i ? -12 : 0 }} />
         ))}
       </div>
-      <div className="mt-1 min-h-[42px]">
+      <div className="mt-1 min-h-[42px] landscape-auto">
         <Captured ids={view.captured[pid]} size="xs" />
       </div>
     </div>
@@ -231,7 +235,7 @@ function Banner({ banner, nameOf, playerOf }) {
 function Modal({ children }) {
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div className="panel max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
+      <motion.div role="dialog" aria-modal="true" className="panel max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto bg-felt-800 p-5 text-center" initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }}>
         {children}
       </motion.div>
     </motion.div>
@@ -266,7 +270,7 @@ function useSettleSteps(res, over, nameOf) {
       const e = seq[shown];
       sfx(e.t === 'tag' ? (e.mul ? 'boost' : 'tick') : e.t === 'total' ? 'chip' : 'tick');
       setShown((n) => n + 1);
-    }, shown === 0 ? 500 : STEP_MS);
+    }, (shown === 0 ? 500 : STEP_MS) * speedScale());
     return () => clearTimeout(t);
   }, [shown, done, seq]);
   const vis = seq.slice(0, shown);
@@ -360,7 +364,7 @@ function GameOver({ over, view, nameOf, onClose, userId }) {
       ) : (
         !over.ranked && <p className="text-sm text-sky-300">연습 게임이라 머니와 전적에 반영되지 않습니다.</p>
       )}
-      <button className="btn btn-gold w-full" onClick={onClose}>대기실로</button>
+      <button className="btn btn-gold w-full" onClick={onClose} {...hk('Escape Enter', 'Esc')}>대기실로</button>
     </Modal>
   );
 }
@@ -515,12 +519,13 @@ export function GameBoard() {
         <div className="flex items-center gap-2">
           {view.sale && <span className="rounded bg-emerald-700 px-2 py-0.5">{nameOf(view.sale.seller)} 광팔기</span>}
           {view.shodangReceiver != null && <span className="hidden rounded bg-red-700 px-2 py-0.5 sm:inline" title="쇼당을 받은 사람은 지면 독박">{nameOf(view.shodangReceiver)} 쇼당 받음</span>}
-          <button className="btn btn-gold whitespace-nowrap !px-3 !py-1" onClick={() => setHelp((h) => !h)} aria-label="규칙 보기" aria-pressed={help}>
+          <button className="btn btn-gold whitespace-nowrap !px-3 !py-1" onClick={() => setHelp((h) => !h)} aria-label="규칙 보기" aria-pressed={help} {...hk('?')}>
             ❓<span className="hidden sm:inline"> 규칙</span>
           </button>
           {!spectator && <AutoToggle room={room} you={you} emit={emit} />}
           <SoundToggle />
-          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => setChatOpen((o) => !o)}>💬<span className="hidden sm:inline"> 채팅</span></button>
+          <SettingsButton />
+          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => setChatOpen((o) => !o)} aria-label="채팅" aria-pressed={chatOpen}>💬<span className="hidden sm:inline"> 채팅</span></button>
           <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => window.confirm('나가면 기권패 처리됩니다. 나갈까요?') && emit('room:leave')}>나가기</button>
         </div>
       </div>
@@ -543,7 +548,7 @@ export function GameBoard() {
           className="relative flex min-h-0 flex-1 items-center justify-center gap-4 rounded-2xl bg-felt-700/70 p-3 ring-1 ring-white/10"
         >
           <div className="relative flex shrink-0 flex-col items-center gap-1">
-            <div className="relative h-[71px] w-[46px] sm:h-[86px] sm:w-[56px]">
+            <div className="relative h-[calc(71px*var(--cs,1))] w-[calc(46px*var(--cs,1))] sm:h-[calc(86px*var(--cs,1))] sm:w-[calc(56px*var(--cs,1))]">
               {[2, 1, 0].map((i) => (
                 <div key={i} className="absolute" style={{ left: i * 2, top: -i * 2 }}>
                   <Card back size="md" />
@@ -552,7 +557,7 @@ export function GameBoard() {
             </div>
             <span className="text-xs text-slate-300">더미 {view.stockCount}</span>
           </div>
-          <div className="flex max-h-full min-w-0 flex-1 flex-wrap content-center items-center justify-center gap-x-3 gap-y-2 overflow-y-auto py-4 [--cw:40px] sm:[--cw:56px]">
+          <div className="flex max-h-full min-w-0 flex-1 flex-wrap content-center items-center justify-center gap-x-3 gap-y-2 overflow-y-auto py-4 [--cw:calc(40px*var(--cs,1))] sm:[--cw:calc(56px*var(--cs,1))]">
             {floorGroups.map((grp) => {
               const spread = grp.ids.some((id) => choiceOpts.includes(id)); // 고를 때는 펼쳐서 클릭하기 쉽게
               const dx = spread ? 0.9 : 0.34;
@@ -581,6 +586,7 @@ export function GameBoard() {
                         slam={id === view.played || id === view.drawn}
                         dim={choiceOpts.length > 0 && !opt}
                         onClick={opt ? () => emit('game:choose', { cardId: id }) : undefined}
+                        hotkey={opt ? String(choiceOpts.indexOf(id) + 1) : undefined}
                       />
                     );
                   })}
@@ -592,6 +598,12 @@ export function GameBoard() {
                 </div>
               );
             })}
+          </div>
+          {/* 처음 내 차례가 왔을 때 한 번만 */}
+          <div className="pointer-events-none absolute bottom-2 left-1/2 z-30 -translate-x-1/2 [&>*]:pointer-events-auto">
+            <OnceHint id="gostop.play" show={canPlay && !over && !intro}>
+              🔗 표시가 붙은 패는 바닥과 같은 달이라 먹을 수 있어요. 손패를 눌러 내세요! (키보드 1~0)
+            </OnceHint>
           </div>
           <Banner banner={banner} nameOf={nameOf} playerOf={playerOf} />
           <ComboPopup combo={combo} nameOf={nameOf} playerOf={playerOf} />
@@ -612,21 +624,21 @@ export function GameBoard() {
               <b className="text-sm">{user.name}</b>
               {timerFor(you)}
               {!isRest && <ScoreChip view={view} pid={you} />}
-              {!isRest && <span className="text-[11px] text-slate-400">/ {view.threshold}점부터 고·스톱</span>}
+              {!isRest && <span className="landscape-hide text-[11px] text-slate-400">/ {view.threshold}점부터 고·스톱</span>}
             </div>
             <motion.span key={status} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-sm font-bold text-gold-400">
               {isRest ? '이번 판은 쉽니다 (관전)' : status}
             </motion.span>
           </div>
-          <div className="min-h-[42px]">
+          <div className="min-h-[42px] landscape-auto">
             <Captured ids={view.captured[you]} size="sm" />
           </div>
-          <div className="mt-2 flex items-end justify-center overflow-x-auto pb-1 pt-4 [--hw:54px] sm:[--hw:70px]">
+          <div className="landscape-tight-hand mt-2 flex items-end justify-center overflow-x-auto pb-1 pt-4 [--hw:calc(54px*var(--cs,1))] sm:[--hw:calc(70px*var(--cs,1))]">
             {hand.map((id, i) => (
-              <Card key={id} id={id} size="lg" style={{ marginLeft: i ? `min(4px, calc((100vw - 40px - ${hand.length} * var(--hw)) / ${hand.length - 1}))` : 0, zIndex: i }} selected={matchHand.has(id)} hl={matchHand.has(id)} onClick={canPlay ? () => playCard(id) : undefined} dim={choiceOpts.length > 0} />
+              <Card key={id} id={id} size="lg" style={{ marginLeft: i ? `min(4px, calc((100vw - 40px - ${hand.length} * var(--hw)) / ${hand.length - 1}))` : 0, zIndex: i }} selected={matchHand.has(id)} hl={matchHand.has(id)} onClick={canPlay ? () => playCard(id) : undefined} dim={choiceOpts.length > 0} hotkey={i < 9 ? String(i + 1) : i === 9 ? '0' : undefined} />
             ))}
             {canDrawOnly && (
-              <button className="btn btn-gold ml-3 self-center" onClick={() => emit('game:play', { cardId: null })}>
+              <button className="btn btn-gold ml-3 self-center" onClick={() => emit('game:play', { cardId: null })} {...hk('d')}>
                 더미 뒤집기
               </button>
             )}
@@ -667,8 +679,8 @@ export function GameBoard() {
             <p className="text-sm">두 사람이 모두 날 수 있는 상황입니다. 둘 다 수락하면 이번 판은 나가리가 됩니다.</p>
             <p className="text-xs text-red-300">받아서 계속하면, 쇼당을 부른 사람이 아닌 다른 사람이 났을 때 내가 독박을 씁니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-gold flex-1" onClick={() => emit('game:shodangAnswer', { accept: true })}>나가리 수락</button>
-              <button className="btn btn-red flex-1" onClick={() => emit('game:shodangAnswer', { accept: false })}>받기 (계속)</button>
+              <button className="btn btn-gold flex-1" onClick={() => emit('game:shodangAnswer', { accept: true })} {...hk('y')}>나가리 수락</button>
+              <button className="btn btn-red flex-1" onClick={() => emit('game:shodangAnswer', { accept: false })} {...hk('n')}>받기 (계속)</button>
             </div>
           </Modal>
         )}
@@ -678,8 +690,8 @@ export function GameBoard() {
             <h3 className="text-xl font-black text-gold-400">총통!</h3>
             <p className="text-sm">첫 패에 같은 달 4장이 있습니다. 지금 선언하면 즉시 승리합니다. 계속하면 이길 때 ×4 입니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-gold flex-1" onClick={() => emit('game:chongtong')}>총통 선언</button>
-              <button className="btn btn-ghost flex-1" onClick={() => emit('game:passChongtong')}>계속 진행</button>
+              <button className="btn btn-gold flex-1" onClick={() => emit('game:chongtong')} {...hk('y')}>총통 선언</button>
+              <button className="btn btn-ghost flex-1" onClick={() => emit('game:passChongtong')} {...hk('n')}>계속 진행</button>
             </div>
           </Modal>
         )}
@@ -690,8 +702,8 @@ export function GameBoard() {
             <p className="text-sm">첫 패에 광이 3장 이상입니다. 광을 팔면 광 1장당 2점을 받고 이번 판은 쉽니다.</p>
             <div className="flex justify-center gap-1">{hand.filter((id) => kindOf(id) === 'gwang').map((id) => <Card key={id} id={id} size="md" />)}</div>
             <div className="flex gap-2">
-              <button className="btn btn-gold flex-1" onClick={() => emit('game:sellGwang')}>광 팔기</button>
-              <button className="btn btn-ghost flex-1" onClick={() => emit('game:passGwang')}>그냥 치기</button>
+              <button className="btn btn-gold flex-1" onClick={() => emit('game:sellGwang')} {...hk('y')}>광 팔기</button>
+              <button className="btn btn-ghost flex-1" onClick={() => emit('game:passGwang')} {...hk('n')}>그냥 치기</button>
             </div>
           </Modal>
         )}
@@ -701,8 +713,8 @@ export function GameBoard() {
             <h3 className="text-xl font-black text-gold-400">{myScore.total}점 달성!</h3>
             <p className="text-sm">현재 {view.go[you]}고 · 고를 하면 점수를 더 쌓지만 상대가 먼저 나면 고박 위험이 있습니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => emit('game:go')}>고!</button>
-              <button className="btn btn-gold flex-1 !py-3 text-lg" onClick={() => emit('game:stop')}>스톱</button>
+              <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => emit('game:go')} {...hk('g')}>고!</button>
+              <button className="btn btn-gold flex-1 !py-3 text-lg" onClick={() => emit('game:stop')} {...hk('s')}>스톱</button>
             </div>
           </Modal>
         )}
@@ -712,8 +724,8 @@ export function GameBoard() {
             <h3 className="text-xl font-black text-gold-400">흔들기</h3>
             <p className="text-sm">같은 달 패를 3장 가지고 있습니다. 흔들면 점수가 ×2 가 됩니다.</p>
             <div className="flex gap-2">
-              <button className="btn btn-gold flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id, shake: true }); }}>흔들기</button>
-              <button className="btn btn-ghost flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id }); }}>그냥 내기</button>
+              <button className="btn btn-gold flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id, shake: true }); }} {...hk('y')}>흔들기</button>
+              <button className="btn btn-ghost flex-1" onClick={() => { const id = shakeFor; setShakeFor(null); emit('game:play', { cardId: id }); }} {...hk('n')}>그냥 내기</button>
             </div>
           </Modal>
         )}

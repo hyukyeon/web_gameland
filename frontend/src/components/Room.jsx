@@ -60,7 +60,8 @@ export function Room() {
                         {p.id === room.hostId && '👑 '}
                         {p.username}
                         {p.bot && ' 🤖'}
-                        {p.bot && p.level && <span className="ml-1 rounded bg-indigo-700 px-1 text-[10px] font-bold" title={STYLE_LABEL[p.style]}>{LEVEL_LABEL[p.level]} · {STYLE_LABEL[p.style]}</span>}
+                        {p.bot && p.level && <span className="ml-1 whitespace-nowrap rounded bg-indigo-700 px-1 text-[10px] font-bold" title={`${LEVEL_LABEL[p.level]} · ${STYLE_LABEL[p.style]}`}>{LEVEL_LABEL[p.level]}</span>}
+                        {p.bot && p.style && <span className="ml-1 hidden whitespace-nowrap text-[10px] text-slate-400 lg:inline">{STYLE_LABEL[p.style]}</span>}
                         {p.id === user.id && <span className="ml-1 text-xs text-gold-400">(나)</span>}
                         {!p.online && <span className="ml-1 text-xs text-red-400">접속 끊김</span>}
                         {p.auto && <span className="ml-1 text-xs text-indigo-300">🤖 자동</span>}
@@ -68,11 +69,11 @@ export function Room() {
                       </span>
                       <span className="flex items-center gap-2">
                         {p.bot && isHost && (
-                          <button className="rounded px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/20" onClick={() => emit('room:removeBot', { botId: p.id })}>
+                          <button className="whitespace-nowrap rounded px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/20" onClick={() => emit('room:removeBot', { botId: p.id })}>
                             내보내기
                           </button>
                         )}
-                        <span className={`rounded px-2 py-0.5 text-xs ${p.ready ? 'bg-emerald-600' : 'bg-slate-600'}`}>{p.ready ? '준비 완료' : '대기'}</span>
+                        <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${p.ready ? 'bg-emerald-600' : 'bg-slate-600'}`}>{p.ready ? '준비 완료' : '대기'}</span>
                       </span>
                     </>
                   ) : (

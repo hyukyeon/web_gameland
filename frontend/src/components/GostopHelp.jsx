@@ -81,7 +81,7 @@ export function GostopHelp({ onClose }) {
         <div className="flex items-center justify-between border-b border-white/15 px-4 py-2">
           <h2 className="text-base font-black text-gold-400">❓ 고스톱 규칙</h2>
           <span className="hidden text-[11px] text-slate-300 sm:inline">게임은 계속 진행 중이에요</span>
-          <button className="btn btn-ghost !px-3 !py-1" onClick={onClose} aria-label="닫기">✕ 닫기</button>
+          <button className="btn btn-ghost !px-3 !py-1" onClick={onClose} aria-label="닫기" data-hotkey="Escape" data-hotkey-label="Esc">✕ 닫기</button>
         </div>
         <div className="space-y-1.5 overflow-y-auto p-3 text-sm">
           {SECTIONS.map((s, i) => (

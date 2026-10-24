@@ -5,23 +5,29 @@ import { cardImg, won, signed } from '../cards.js';
 import { Avatar, BotLevel } from './Avatar.jsx';
 import { Chat } from './Chat.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
+import { speedScale, useShortLandscape } from '../settings.js';
+import { hk } from '../keys.js';
+import { SettingsButton } from './Settings.jsx';
 import { JokboHelp } from './JokboHelp.jsx';
 import { EmoteBubble, EmoteButton } from './Emote.jsx';
 import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { sfx } from '../sound.js';
 
 const CARD = {
-  sm: 'h-[58px] w-[38px] sm:h-[72px] sm:w-[47px]',
-  lg: 'h-[96px] w-[62px] sm:h-[124px] sm:w-[80px]',
+  sm: 'h-[calc(58px*var(--cs,1))] w-[calc(38px*var(--cs,1))] sm:h-[calc(72px*var(--cs,1))] sm:w-[calc(47px*var(--cs,1))]',
+  lg: 'h-[calc(96px*var(--cs,1))] w-[calc(62px*var(--cs,1))] sm:h-[calc(124px*var(--cs,1))] sm:w-[calc(80px*var(--cs,1))]',
 };
 
 // 배분 연출: 한 바퀴에 한 장씩 두 바퀴. (j번째 바퀴, k번째 좌석) 카드가 날아가기 시작하는 시각(초)
-const DEAL_STEP = 0.12;
-const DEAL_FLY = 0.36;
-const dealDelay = (j, k, n) => (j * n + k) * DEAL_STEP;
+// 연출 시간(초)은 설정의 연출 속도 배율을 따른다
+const T = {
+  get dealStep() { return 0.12 * speedScale(); },
+  get dealFly() { return 0.36 * speedScale(); },
+  get revealFirst() { return 0.4 * speedScale(); },
+  get revealStep() { return 0.75 * speedScale(); },
+};
+const dealDelay = (j, k, n) => (j * n + k) * T.dealStep;
 // 쇼다운 공개 연출: 상대 패를 앉은 순서대로 한 명씩 뒤집는다
-const REVEAL_FIRST = 0.4;
-const REVEAL_STEP = 0.75;
 
 /**
  * 섯다 패 한 장. back 이면 뒷면.
@@ -84,7 +90,7 @@ function DealLayer({ dealKey, order, seats }) {
   const [on, setOn] = useState(true);
   useEffect(() => {
     setOn(true);
-    const t = setTimeout(() => setOn(false), (dealDelay(1, n - 1, n) + DEAL_FLY + 0.2) * 1000);
+    const t = setTimeout(() => setOn(false), (dealDelay(1, n - 1, n) + T.dealFly + 0.2) * 1000);
     return () => clearTimeout(t);
   }, [dealKey, n]);
   if (!on) return null;
@@ -96,7 +102,7 @@ function DealLayer({ dealKey, order, seats }) {
         style={{ x: '-50%', y: '-50%' }}
         initial={{ left: '50%', top: '50%', opacity: 0, rotate: -25 }}
         animate={{ left: `${seats[k][0] + (j ? 2.5 : -2.5)}%`, top: `${seats[k][1] + (k === 0 ? 14 : 8)}%`, opacity: [0, 1, 1, 0], rotate: j ? 6 : -6 }}
-        transition={{ delay: dealDelay(j, k, n), duration: DEAL_FLY, ease: 'easeOut', opacity: { delay: dealDelay(j, k, n), duration: DEAL_FLY + 0.1, times: [0, 0.1, 0.8, 1] } }}
+        transition={{ delay: dealDelay(j, k, n), duration: T.dealFly, ease: 'easeOut', opacity: { delay: dealDelay(j, k, n), duration: T.dealFly + 0.1, times: [0, 0.1, 0.8, 1] } }}
       />
     )),
   );
@@ -186,6 +192,13 @@ const SEATS = {
   4: [[50, 90], [9, 52], [50, 9], [91, 52]],
   5: [[50, 90], [12, 66], [24, 18], [76, 18], [88, 66]],
 };
+// 휴대폰 가로 모드: 세로가 좁으니 위아래 자리를 안쪽으로, 옆자리를 바깥으로
+const SEATS_WIDE = {
+  2: [[50, 76], [50, 17]],
+  3: [[50, 76], [16, 24], [84, 24]],
+  4: [[50, 76], [8, 46], [50, 17], [92, 46]],
+  5: [[50, 76], [9, 62], [24, 17], [76, 17], [91, 62]],
+};
 
 function Seat({ pos, pid, p, view, isMe, nameOf, playerOf, turn, left, auto, win, deal, revealAt, peek }) {
   const isTurn = turn && view.turn === pid;
@@ -195,7 +208,7 @@ function Seat({ pos, pid, p, view, isMe, nameOf, playerOf, turn, left, auto, win
   const last = p.lastAction;
   const dk = deal?.key ?? 'sync';
   // 배분 카드가 도착하는 시각 (재접속 복구면 연출 없음)
-  const landAt = (j) => (deal ? dealDelay(j, deal.k, deal.n) + DEAL_FLY - 0.05 : 0);
+  const landAt = (j) => (deal ? dealDelay(j, deal.k, deal.n) + T.dealFly - 0.05 : 0);
   const mineOpen = isMe && (peek.all || ended);
   const showName = hand && p.handName && (!isMe || mineOpen || (peek.open[0] && peek.open[1]));
   return (
@@ -240,7 +253,7 @@ function Seat({ pos, pid, p, view, isMe, nameOf, playerOf, turn, left, auto, win
         {isMe && hand && !mineOpen && !(peek.open[0] && peek.open[1]) && (
           <div className="absolute bottom-0 left-full ml-2 flex w-[76px] flex-col items-start gap-1 sm:w-[90px]">
             <span className="text-[10px] leading-tight text-slate-200 drop-shadow">패를 위로 밀어 쪼기</span>
-            <button className="whitespace-nowrap rounded-full bg-gold-500 px-2 py-0.5 text-[11px] font-black text-felt-900 shadow hover:bg-gold-400" onClick={() => peek.set('all')}>
+            <button className="whitespace-nowrap rounded-full bg-gold-500 px-2 py-0.5 text-[11px] font-black text-felt-900 shadow hover:bg-gold-400" onClick={() => peek.set('all')} {...hk('v')}>
               👀 바로 보기
             </button>
           </div>
@@ -305,7 +318,7 @@ function ResultModal({ over, view, nameOf, you, onClose }) {
           })}
         </div>
         {over.ranked === false && <p className="text-xs text-slate-400">AI 연습 판이라 머니·전적에는 반영되지 않아요.</p>}
-        <button className="btn btn-gold w-full" onClick={onClose}>대기실로</button>
+        <button className="btn btn-gold w-full" onClick={onClose} {...hk('Escape Enter', 'Esc')}>대기실로</button>
       </motion.div>
     </motion.div>
   );
@@ -339,8 +352,8 @@ function TieVote({ vote, you, nameOf, skew, emit }) {
         </div>
         {mineTurn ? (
           <div className="flex gap-2">
-            <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => answer(true)}>💰 묻고 더블로 가!</button>
-            <button className="btn btn-ghost flex-1" onClick={() => answer(false)}>나눠 갖기</button>
+            <button className="btn btn-red flex-1 !py-3 text-lg" onClick={() => answer(true)} {...hk('y')}>💰 묻고 더블로 가!</button>
+            <button className="btn btn-ghost flex-1" onClick={() => answer(false)} {...hk('n')}>나눠 갖기</button>
           </div>
         ) : (
           <p className="text-xs text-slate-300">{vote.pids.includes(you) ? '다른 사람의 선택을 기다리는 중…' : '동점자들이 선택하는 중…'}</p>
@@ -362,9 +375,9 @@ const loadLogOpen = () => {
 };
 
 /** 베팅 버튼: 행동 이름 + 이번에 실제로 더 내는 금액 */
-function BetButton({ label, amount, allIn, className, disabled, onClick }) {
+function BetButton({ label, amount, allIn, className, disabled, onClick, hotkey }) {
   return (
-    <button className={`btn flex flex-col items-center !px-3 !py-1 leading-tight sm:!px-4 ${className}`} disabled={disabled} onClick={onClick}>
+    <button className={`btn flex flex-col items-center !px-3 !py-1 leading-tight sm:!px-4 ${className}`} disabled={disabled} onClick={onClick} {...hk(hotkey)}>
       <span>{allIn ? `🔥 ${label}` : label}</span>
       {amount != null && <span className="text-[11px] font-black tabular-nums opacity-90">{amount > 0 ? `+${won(amount)}` : '±0'}{allIn && ' 올인'}</span>}
     </button>
@@ -390,7 +403,8 @@ export function SeotdaBoard() {
     const i = view.pids.indexOf(you);
     return i < 0 ? view.pids : [...view.pids.slice(i), ...view.pids.slice(0, i)];
   }, [view.pids, you]);
-  const seats = SEATS[Math.min(5, Math.max(2, order.length))];
+  const wide = useShortLandscape();
+  const seats = (wide ? SEATS_WIDE : SEATS)[Math.min(5, Math.max(2, order.length))];
   const posOf = (pid) => seats[Math.max(0, order.indexOf(pid))] ?? [50, 50];
   const o = view.options;
   const myTurn = !!o && !busy;
@@ -402,7 +416,7 @@ export function SeotdaBoard() {
 
   // ----- 쇼다운 공개 연출: 상대 패를 한 명씩 뒤집은 뒤에 승자 표시·칩 정산·결과 창 -----
   const revealOrder = view.phase === 'ended' && view.result ? order.filter((pid) => pid !== you && view.result.hands?.[pid]) : [];
-  const revealAt = (pid) => REVEAL_FIRST + Math.max(0, revealOrder.indexOf(pid)) * REVEAL_STEP;
+  const revealAt = (pid) => T.revealFirst + Math.max(0, revealOrder.indexOf(pid)) * T.revealStep;
   const [revealDone, setRevealDone] = useState(view.phase === 'ended');
   const [overReady, setOverReady] = useState(view.phase === 'ended'); // 승리 칩 이동을 본 뒤 결과 창
   const prevPhase = useRef(view.phase);
@@ -415,8 +429,8 @@ export function SeotdaBoard() {
       return undefined;
     }
     if (was === 'ended') return undefined;
-    const timers = revealOrder.map((_, i) => setTimeout(() => sfx('flip'), (REVEAL_FIRST + i * REVEAL_STEP) * 1000));
-    const end = (REVEAL_FIRST + revealOrder.length * REVEAL_STEP + 0.6) * 1000;
+    const timers = revealOrder.map((_, i) => setTimeout(() => sfx('flip'), (T.revealFirst + i * T.revealStep) * 1000));
+    const end = (T.revealFirst + revealOrder.length * T.revealStep + 0.6) * 1000;
     timers.push(setTimeout(() => setRevealDone(true), end));
     timers.push(setTimeout(() => setOverReady(true), end + 1000));
     return () => timers.forEach(clearTimeout);
@@ -483,12 +497,13 @@ export function SeotdaBoard() {
           🃏 {room.name} · 참가비 {won(view.ante)}원{view.round > 1 && ` · ${view.round}판째`}
         </span>
         <div className="flex shrink-0 items-center gap-2">
-          <button className="btn btn-gold whitespace-nowrap !px-3 !py-1" onClick={() => setHelp((h) => !h)} aria-label="족보 보기" aria-pressed={help}>
+          <button className="btn btn-gold whitespace-nowrap !px-3 !py-1" onClick={() => setHelp((h) => !h)} aria-label="족보 보기" aria-pressed={help} {...hk('?')}>
             ❓<span className="hidden sm:inline"> 족보 보기</span>
           </button>
           {!spectator && <AutoToggle room={room} you={you} emit={emit} />}
           <SoundToggle />
-          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => setChatOpen((c) => !c)}>💬</button>
+          <SettingsButton />
+          <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => setChatOpen((c) => !c)} aria-label="채팅" aria-pressed={chatOpen}>💬</button>
           <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1" onClick={() => window.confirm('나가면 이번 판은 다이(포기) 처리됩니다. 나갈까요?') && emit('room:leave')}>나가기</button>
         </div>
       </div>
@@ -508,7 +523,7 @@ export function SeotdaBoard() {
               <span className="text-base sm:text-xl">원</span>
             </motion.div>
             <div className="mt-1 flex items-center justify-center gap-1 text-[10px] text-emerald-100/90 sm:text-xs">
-              <span>🪙 현재 베팅 {won(view.currentBet)}</span>
+              <span className="landscape-hide">🪙 현재 베팅 {won(view.currentBet)}</span>
               {view.double > 0 ? (
                 <span className="rounded bg-yellow-500 px-1.5 font-black text-felt-900">💰 묻고 더블{view.double > 1 ? ` ×${view.double}` : ''}</span>
               ) : (
@@ -553,18 +568,18 @@ export function SeotdaBoard() {
       </div>
 
       {/* 하단: 액션 바 (내 차례일 때) — 족보 모달이 떠 있어도 쓸 수 있게 오버레이 위로 올림 */}
-      <div className="relative z-[59] min-h-[56px]">
+      <div className={wide ? 'fixed bottom-2 right-2 z-[59] w-[min(36vw,300px)]' : 'relative z-[59] min-h-[56px]'}>
         {!spectator && (
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl bg-black/55 p-2">
             <EmoteButton />
             <AnimatePresence mode="wait">
               {o ? (
                 <motion.div key="bar" className="flex flex-wrap items-center justify-center gap-2" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                  <BetButton label="다이" className="btn-red" disabled={!myTurn} onClick={() => act('die')} />
-                  <BetButton label={o.call.amount === 0 ? '체크' : '콜'} amount={o.call.amount} allIn={o.call.allIn} className="btn-gold" disabled={!myTurn} onClick={() => act('call')} />
-                  {o.half && <BetButton label="하프" amount={o.half.amount} allIn={o.half.allIn} className="btn-ghost !bg-sky-700 hover:!bg-sky-600" disabled={!myTurn} onClick={() => act('half')} />}
-                  {o.bbing && <BetButton label="삥" amount={o.bbing.amount} allIn={o.bbing.allIn} className="btn-ghost !bg-emerald-700 hover:!bg-emerald-600" disabled={!myTurn} onClick={() => act('bbing')} />}
-                  {o.ddadang && <BetButton label="따당" amount={o.ddadang.amount} allIn={o.ddadang.allIn} className="btn-ghost !bg-purple-700 hover:!bg-purple-600" disabled={!myTurn} onClick={() => act('ddadang')} />}
+                  <BetButton label="다이" className="btn-red" disabled={!myTurn} onClick={() => act('die')} hotkey="d" />
+                  <BetButton label={o.call.amount === 0 ? '체크' : '콜'} amount={o.call.amount} allIn={o.call.allIn} className="btn-gold" disabled={!myTurn} onClick={() => act('call')} hotkey="c" />
+                  {o.half && <BetButton label="하프" amount={o.half.amount} allIn={o.half.allIn} className="btn-ghost !bg-sky-700 hover:!bg-sky-600" disabled={!myTurn} onClick={() => act('half')} hotkey="h" />}
+                  {o.bbing && <BetButton label="삥" amount={o.bbing.amount} allIn={o.bbing.allIn} className="btn-ghost !bg-emerald-700 hover:!bg-emerald-600" disabled={!myTurn} onClick={() => act('bbing')} hotkey="b" />}
+                  {o.ddadang && <BetButton label="따당" amount={o.ddadang.amount} allIn={o.ddadang.allIn} className="btn-ghost !bg-purple-700 hover:!bg-purple-600" disabled={!myTurn} onClick={() => act('ddadang')} hotkey="t" />}
                   <span className="hidden flex-col items-center gap-0.5 text-[10px] text-slate-300 sm:flex">
                     <TurnTimer left={left} />
                     <span>보유 {won(mine.stack)}</span>

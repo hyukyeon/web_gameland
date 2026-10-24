@@ -1,13 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { cardImg, isBonus } from '../cards.js';
+import { cardImg, isBonus, cardName } from '../cards.js';
+import { hk } from '../keys.js';
 
 // 화투패 비율 104:160
+// 크기는 설정의 카드 크기 배율(--cs)을 곱한다
 const SIZES = {
-  xs: 'w-[26px] h-[40px]',
-  sm: 'w-[34px] h-[52px] sm:w-[40px] sm:h-[61px]',
-  md: 'w-[46px] h-[71px] sm:w-[56px] sm:h-[86px]',
-  lg: 'w-[54px] h-[83px] sm:w-[70px] sm:h-[108px]',
+  xs: 'w-[calc(26px*var(--cs,1))] h-[calc(40px*var(--cs,1))]',
+  sm: 'w-[calc(34px*var(--cs,1))] h-[calc(52px*var(--cs,1))] sm:w-[calc(40px*var(--cs,1))] sm:h-[calc(61px*var(--cs,1))]',
+  md: 'w-[calc(46px*var(--cs,1))] h-[calc(71px*var(--cs,1))] sm:w-[calc(56px*var(--cs,1))] sm:h-[calc(86px*var(--cs,1))]',
+  lg: 'w-[calc(54px*var(--cs,1))] h-[calc(83px*var(--cs,1))] sm:w-[calc(70px*var(--cs,1))] sm:h-[calc(108px*var(--cs,1))]',
 };
 
 const spring = { type: 'spring', stiffness: 260, damping: 28, mass: 0.9 };
@@ -16,7 +18,7 @@ const spring = { type: 'spring', stiffness: 260, damping: 28, mass: 0.9 };
  * 화투패 한 장. id 가 있으면 layoutId 로 손패→바닥→획득패 이동이 자동으로 날아가는 애니메이션이 된다.
  * back=true 면 뒷면(CSS), 보너스 카드(48/49)는 CSS 로 그린다.
  */
-export function Card({ id, back = false, size = 'md', onClick, selected, glow, hl, dim, fresh, slam, className = '', style }) {
+export function Card({ id, back = false, size = 'md', onClick, selected, glow, hl, dim, fresh, slam, className = '', style, hotkey }) {
   const clickable = !!onClick;
   // slam: 방금 낸/뒤집은 패 — 크게 던져서 탁! 하고 내려앉는다 (살짝 기울었다가 바로잡힘)
   const initial = slam
@@ -37,8 +39,15 @@ export function Card({ id, back = false, size = 'md', onClick, selected, glow, h
       whileTap={clickable ? { scale: 0.95 } : undefined}
       onClick={onClick}
       style={style}
-      className={`relative shrink-0 select-none ${SIZES[size]} ${clickable ? 'cursor-pointer' : ''} ${className}`}
+      className={`relative shrink-0 select-none ${SIZES[size]} ${clickable ? 'cursor-pointer hk-corner' : ''} ${className}`}
+      // 접근성: 누를 수 있는 패는 버튼처럼 Tab 으로 이동하고 Enter/Space 로 낸다
+      role={clickable ? 'button' : 'img'}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={back || id == null ? '뒷면' : `${cardName(id)}${hl ? ' (짝 맞음)' : ''}`}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e); } } : undefined}
+      {...(clickable ? hk(hotkey) : {})}
     >
+      {hl && <span className="match-badge" aria-hidden="true">🔗</span>}
       {slam && (
         <>
           {/* 착지 충격파 */}
