@@ -35,6 +35,7 @@ export class GostopGame {
     this.opt = { ppeokPay, ttibak, chongtong, carry };
     this.frames = [];
     this.ctx = null;
+    this.gukjin = Object.fromEntries(pids.map((p) => [p, 'auto'])); // 9월 국진: auto | yeol | pi
     this.deal(firstPlayer ?? pids[0], rest);
   }
 
@@ -204,6 +205,7 @@ export class GostopGame {
       phase: this.phase,
       hands: this.hands,
       captured: this.captured,
+      gukjin: this.gukjin,
       go: this.go,
       shakes: this.shakes,
       shaken: this.shaken,
@@ -251,6 +253,7 @@ export class GostopGame {
       turn: s.turn,
       phase: s.phase,
       captured: s.captured,
+      gukjin: s.gukjin,
       go: s.go,
       shakes: s.shakes,
       shaken: s.shaken,
@@ -276,8 +279,17 @@ export class GostopGame {
     return GostopGame.viewOf(this.snapshot(), viewer, this.pids);
   }
 
+  /** 국진(9월 술잔)을 열끗/쌍피 중 어느 쪽으로 셀지 고른다. 'auto' 면 유리한 쪽 */
+  setGukjin(pid, mode) {
+    if (!this.pids.includes(pid) || !['auto', 'yeol', 'pi'].includes(mode)) return { ok: false, error: '잘못된 선택입니다.' };
+    if (this.phase === 'ended') return { ok: false, error: '이미 끝난 판입니다.' };
+    if (!this.captured[pid].some((id) => card(id).dual)) return { ok: false, error: '국진을 먹지 않았습니다.' };
+    this.gukjin[pid] = mode;
+    return { ok: true, frames: [this.snapshot()] };
+  }
+
   scoreInfo(pid) {
-    const s = computeScore(this.captured[pid]);
+    const s = computeScore(this.captured[pid], this.gukjin[pid]);
     return { total: s.total, detail: s.detail, gwang: s.gwang, yeol: s.yeol, tti: s.tti, pi: s.pi };
   }
 
@@ -389,7 +401,7 @@ export class GostopGame {
   canShodang(pid) {
     if (this.phase !== 'play' || this.turn !== pid || this.active.length !== 3) return false;
     if (this.hands[pid].length < 2 || this.go[pid] > 0 || this.shodangUsed.includes(pid) || this.shodangReceiver != null) return false;
-    return this.opps(pid).every((o) => computeScore(this.captured[o]).total >= this.threshold);
+    return this.opps(pid).every((o) => computeScore(this.captured[o], this.gukjin[o]).total >= this.threshold);
   }
 
   callShodang(pid) {
@@ -636,7 +648,7 @@ export class GostopGame {
   }
 
   afterTurn(pid) {
-    const base = computeScore(this.captured[pid]).total;
+    const base = computeScore(this.captured[pid], this.gukjin[pid]).total;
     const exhausted = this.isExhausted();
     const decision = this.go[pid] === 0 ? base >= this.threshold : base > this.lastGoBase[pid];
     if (decision) {
@@ -712,7 +724,7 @@ export class GostopGame {
 
   endGame(winner) {
     const losers = this.opps(winner);
-    const ws = computeScore(this.captured[winner]);
+    const ws = computeScore(this.captured[winner], this.gukjin[winner]);
     const goN = this.go[winner];
     const goBonus = Math.min(goN, 2);
     let common = 1;
@@ -739,7 +751,7 @@ export class GostopGame {
       const loserGwang = this.captured[loser].filter((id) => card(id).kind === 'gwang').length;
       const bak = {
         gwangbak: ws.gwangPts > 0 && loserGwang === 0,
-        pibak: ws.pi >= 10 && loserPiCount(this.captured[loser]) < 6,
+        pibak: ws.pi >= 10 && loserPiCount(this.captured[loser], this.gukjin[loser]) < 6,
         meongbak: ws.yeol >= 7,
         gobak: this.go[loser] > 0,
         ttibak: this.opt.ttibak && ws.tti >= 5,

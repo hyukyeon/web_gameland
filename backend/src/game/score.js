@@ -62,16 +62,20 @@ function calc(ids, sepAsPi) {
   };
 }
 
-// 9월 술잔은 열끗/쌍피 중 유리한 쪽으로 자동 계산
-export function computeScore(ids) {
+// 9월 국진(술잔): mode 'yeol' = 열끗, 'pi' = 쌍피, 'auto' = 유리한 쪽으로 자동 계산
+export function computeScore(ids, mode = 'auto') {
+  if (mode === 'yeol') return calc(ids, false);
+  if (mode === 'pi') return calc(ids, true);
   const a = calc(ids, false);
   if (!ids.some((id) => card(id).dual)) return a;
   const b = calc(ids, true);
   return b.total > a.total ? b : a;
 }
 
-// 박 판정에 쓰는 상대의 피 장수: 술잔을 쌍피로 보는 편이 유리하면 그쪽으로
-export function loserPiCount(ids) {
+// 박 판정에 쓰는 상대의 피 장수: 선택하지 않았다면 쌍피로 보는 편이 유리하면 그쪽으로
+export function loserPiCount(ids, mode = 'auto') {
+  if (mode === 'yeol') return calc(ids, false).pi;
+  if (mode === 'pi') return calc(ids, true).pi;
   const a = calc(ids, false).pi;
   if (!ids.some((id) => card(id).dual)) return a;
   return Math.max(a, calc(ids, true).pi);

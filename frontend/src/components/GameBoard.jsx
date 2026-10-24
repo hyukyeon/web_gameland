@@ -44,7 +44,44 @@ function Captured({ ids, size = 'xs' }) {
   );
 }
 
-function ScoreChip({ view, pid }) {
+const GUKJIN_ID = 32; // 9월 국진(술잔)
+const GUKJIN_LABEL = { auto: '자동', yeol: '열끗', pi: '쌍피' };
+
+/** 국진을 먹은 내 점수줄에 붙는 열끗/쌍피 선택 칩 */
+function GukjinChip({ view, emit }) {
+  const mode = view.gukjin?.[view.you] ?? 'auto';
+  const next = { auto: 'pi', pi: 'yeol', yeol: 'auto' }[mode];
+  return (
+    <button
+      className="rounded bg-amber-500/90 px-1.5 py-0.5 font-bold text-felt-900 hover:bg-amber-400"
+      title="국진을 열끗으로 셀지 쌍피로 셀지 정합니다 (누르면 변경)"
+      aria-label={`국진 ${GUKJIN_LABEL[mode]} — 누르면 ${GUKJIN_LABEL[next]}로 변경`}
+      onClick={() => emit('game:gukjin', { mode: next })}
+    >
+      🍶 국진: {GUKJIN_LABEL[mode]}
+    </button>
+  );
+}
+
+/** 국진을 먹은 순간 한 번 묻는다 */
+function GukjinPrompt({ onPick, onClose }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="국진 선택">
+      <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="panel w-full max-w-sm p-5 text-center">
+        <div className="mb-1 text-3xl">🍶</div>
+        <h3 className="text-lg font-black text-gold-400">국진을 먹었습니다!</h3>
+        <p className="mt-1 text-sm text-slate-300">9월 술잔을 어떻게 셀까요? 판 중에 점수줄의 🍶 버튼으로 바꿀 수 있어요.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button className="btn btn-gold" onClick={() => onPick('pi')}>쌍피로 (피 2장)</button>
+          <button className="btn btn-ghost" onClick={() => onPick('yeol')}>열끗으로</button>
+        </div>
+        <button className="mt-2 text-xs text-slate-400 underline" onClick={onClose}>나중에 정할게요 (자동: 유리한 쪽)</button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ScoreChip({ view, pid, emit }) {
   const s = view.scores[pid];
   const go = view.go[pid];
   return (
@@ -56,6 +93,7 @@ function ScoreChip({ view, pid }) {
       {s.detail.map((d) => (
         <span key={d.name} className="rounded bg-white/10 px-1.5 py-0.5">{d.name}</span>
       ))}
+      {emit && pid === view.you && view.captured[pid].includes(GUKJIN_ID) && <GukjinChip view={view} emit={emit} />}
       {nearCombos(view.captured, pid).map((n) => (
         <motion.span key={`near-${n}`} initial={{ scale: 0.4 }} animate={{ scale: 1, opacity: [1, 0.55, 1] }} transition={{ opacity: { repeat: Infinity, duration: 1.2 } }} className="rounded bg-red-600 px-1.5 py-0.5 font-black text-white" title="한 장만 더 먹으면 완성">
           🚨 {n} 비상
@@ -450,6 +488,12 @@ export function GameBoard() {
   // 판 시작 연출: 선 정하기(밤일낮장) → 기리 순서
   const [intro, setIntro] = useState(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null);
   useEffect(() => setIntro(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null), [startInfo]);
+  // 국진을 먹으면 한 번 묻는다 (판마다 한 번)
+  const gukjinAsked = useRef(null);
+  const [gukjinAsk, setGukjinAsk] = useState(false);
+  useEffect(() => {
+    if (gukjinAsked.current !== startInfo?.key) gukjinAsked.current = null;
+  }, [startInfo?.key]);
   const left = useCountdown(turnInfo?.deadlineAt, skew);
   // 차례 배지: 서버가 알려준 지금 차례인 사람에게만 (남은 시간 또는 AI 대행)
   const timerFor = (pid) => (turnInfo?.userId === pid && view.phase !== 'ended' ? <TurnTimer left={left} auto={turnInfo.auto} /> : null);
@@ -460,6 +504,13 @@ export function GameBoard() {
   const spectator = !room?.players.some((p) => p.id === you); // 관전자: 손패·조작 UI 없음
   const isRest = view.rest === you;
   const myTurn = view.turn === you && !busy;
+  const gotGukjin = !spectator && view.phase !== 'ended' && view.captured[you]?.includes(GUKJIN_ID);
+  useEffect(() => {
+    if (gotGukjin && gukjinAsked.current == null && (view.gukjin?.[you] ?? 'auto') === 'auto') {
+      gukjinAsked.current = startInfo?.key ?? true;
+      setGukjinAsk(true);
+    }
+  }, [gotGukjin, view.gukjin, you, startInfo?.key]);
   const canPlay = myTurn && view.phase === 'play';
   // 바닥패를 같은 달끼리 묶는다. 묶음 순서는 처음 나타난 순서를 유지해서 다른 묶음이 생기거나 사라져도 나머지는 제자리에 머문다.
   const groupOrder = useRef([]);
@@ -623,7 +674,7 @@ export function GameBoard() {
               <EmoteButton />
               <b className="text-sm">{user.name}</b>
               {timerFor(you)}
-              {!isRest && <ScoreChip view={view} pid={you} />}
+              {!isRest && <ScoreChip view={view} pid={you} emit={spectator ? null : emit} />}
               {!isRest && <span className="landscape-hide text-[11px] text-slate-400">/ {view.threshold}점부터 고·스톱</span>}
             </div>
             <motion.span key={status} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-sm font-bold text-gold-400">
@@ -666,6 +717,9 @@ export function GameBoard() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {gukjinAsk && <GukjinPrompt key="gukjin" onPick={(mode) => { emit('game:gukjin', { mode }); setGukjinAsk(false); }} onClose={() => setGukjinAsk(false)} />}
+      </AnimatePresence>
       <AnimatePresence>{help && <GostopHelp key="help" onClose={() => setHelp(false)} />}</AnimatePresence>
 
       {/* 선택 모달 */}

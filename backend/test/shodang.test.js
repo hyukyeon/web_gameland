@@ -86,3 +86,23 @@ describe('쇼당', () => {
     expect(g.callShodang(A).ok).toBe(false);
   });
 });
+
+describe('국진 선택', () => {
+  test('setGukjin: 먹은 사람만, 값 검증, 점수에 반영, 뷰에 노출', () => {
+    const g = mk();
+    expect(g.setGukjin(A, 'pi').ok).toBe(false); // 국진을 먹지 않음
+    g.captured[A] = [16, 20, 24, 36, 32, 2, 3, 6, 7, 10, 11, 14, 15, 18];
+    expect(g.setGukjin(A, 'x').ok).toBe(false);
+    expect(g.setGukjin(99, 'pi').ok).toBe(false);
+    const auto = g.scoreInfo(A).total;
+    const r = g.setGukjin(A, 'yeol');
+    expect(r.ok).toBe(true);
+    expect(g.scoreInfo(A).total).toBeLessThan(auto);
+    expect(r.frames[0].scores[A].total).toBe(g.scoreInfo(A).total);
+    expect(g.view(B).gukjin[A]).toBe('yeol');
+    expect(g.setGukjin(A, 'pi').ok).toBe(true);
+    expect(g.scoreInfo(A).total).toBe(auto);
+    g.phase = 'ended';
+    expect(g.setGukjin(A, 'yeol').ok).toBe(false);
+  });
+});

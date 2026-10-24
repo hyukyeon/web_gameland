@@ -1483,6 +1483,15 @@ export function attachSockets(httpServer, corsOrigin) {
     socket.on('game:passGwang', (_p, cb) => withGame(socket, cb, (g, id) => g.passGwang(id)));
     socket.on('game:chongtong', (_p, cb) => withGame(socket, cb, (g, id) => g.callChongtong(id)));
     socket.on('game:passChongtong', (_p, cb) => withGame(socket, cb, (g, id) => g.passChongtong(id)));
+    socket.on('game:gukjin', (payload, cb) => {
+      const uid = socket.data.user.id;
+      const room = rooms.get(userRoom.get(uid));
+      if (!room?.game || room.type !== 'gostop' || !room.players.some((p) => p.id === uid)) return ack(cb, { ok: false, error: '진행 중인 게임이 없습니다.' });
+      const r = room.game.setGukjin(uid, payload?.mode);
+      if (!r.ok) return ack(cb, r);
+      ack(cb, { ok: true });
+      emitFrames(room, r.frames);
+    });
     socket.on('game:go', (_p, cb) => withGame(socket, cb, (g, id) => g.callGo(id)));
     socket.on('game:stop', (_p, cb) => withGame(socket, cb, (g, id) => g.callStop(id)));
     socket.on('game:shodang', (_p, cb) => withGame(socket, cb, (g, id) => g.callShodang(id)));

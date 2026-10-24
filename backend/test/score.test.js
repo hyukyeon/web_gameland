@@ -65,4 +65,14 @@ describe('점수 계산', () => {
     expect(loserPiCount([32, 2])).toBe(3);
     expect(loserPiCount([2, 3])).toBe(2);
   });
+
+  test('국진 선택: yeol/pi 로 고정하면 유리 여부와 무관하게 그대로 센다', () => {
+    const ids = [16, 20, 24, 36, 32, 2, 3, 6, 7, 10, 11, 14, 15, 18];
+    expect(computeScore(ids, 'yeol').sepAsPi).toBe(false);
+    expect(computeScore(ids, 'yeol').total).toBeLessThan(computeScore(ids, 'pi').total);
+    expect(computeScore(ids, 'auto').total).toBe(computeScore(ids, 'pi').total);
+    expect(computeScore([16, 20, 24, 36, 32, 2, 3], 'pi').sepAsPi).toBe(true);
+    expect(loserPiCount([32, 2], 'yeol')).toBe(1);
+    expect(loserPiCount([32, 2], 'pi')).toBe(3);
+  });
 });
