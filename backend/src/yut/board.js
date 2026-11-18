@@ -12,8 +12,9 @@
  *   14                    1
  *   15 ─16 ─17 ─18 ─19 ─ 0
  *
- * 말은 대기(-1) → 판 위(1~28) → 도착(DONE) 순서. 0 번 칸은 출발·도착 자리라 말이 머물지 않는다
- * (19 또는 28 에서 한 칸 더 가면 곧 도착).
+ * 말은 대기(-1) → 판 위(0~28) → 도착(DONE) 순서. 0 번 칸은 출발점(참먹이): 19·28 다음 칸이고,
+ * 여기에 딱 멈추면 아직 판 위(잡기·업기 가능)이며 **0 을 지나 한 칸이라도 더 가야** 말이 나간다(DONE).
+ * 대기 중인 말은 0 을 거치지 않고 곧장 1 로 나온다.
  */
 export const WAIT = -1;
 export const DONE = 99;
@@ -27,7 +28,8 @@ export function step(node, prev, first) {
     if (node === 22) return 27; // 방에서 출발하면 곧장 도착 쪽 지름길
   }
   if (node === 22) return prev === 21 ? 23 : 27; // 방을 지나칠 땐 가던 대각선을 그대로
-  if (node === 19 || node === 28) return DONE;
+  if (node === 0) return DONE; // 참먹이를 넘어서면 나간다
+  if (node === 19 || node === 28) return 0; // 참먹이(출발점)로 들어온다
   if (node === 20) return 21;
   if (node === 21) return 22;
   if (node === 23) return 24;

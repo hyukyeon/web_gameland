@@ -5,6 +5,7 @@ import { ComingSoon } from './ComingSoon.jsx';
 import { GAMES } from '../games.js';
 import { getSkill, skillLabel } from '../omokSkill.js';
 import { Avatar } from './Avatar.jsx';
+import { Logo } from './Logo.jsx';
 import React, { Suspense, useEffect, useState } from 'react';
 import { lazyNamed } from '../lazy.js';
 import { Loading } from './Loading.jsx';
@@ -15,8 +16,7 @@ import { won, signed } from '../cards.js';
 import { Chat } from './Chat.jsx';
 import { OPTION_LABELS, BETS, LEVELS } from './options.js';
 
-const SlotMachine = lazyNamed(() => import('./SlotMachine.jsx'), 'SlotMachine');
-const SudokuGame = lazyNamed(() => import('./SudokuGame.jsx'), 'SudokuGame');
+import { SoloEntry, SoloRoom, SOLO_GAMES } from './SoloRoom.jsx';
 const ProfilePanel = lazyNamed(() => import('./Profile.jsx'), 'ProfilePanel');
 
 function OptionToggles({ opts, onChange, disabled }) {
@@ -65,7 +65,7 @@ function CreateRoom({ onClose, game = 'gostop' }) {
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="panel w-full max-w-lg space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-black text-gold-400">{game === 'seotda' ? '🃏 섯다 방 만들기' : game === 'omok' ? '⚪⚫ 오목 방 만들기' : game === 'yut' ? '🎲 윷놀이 방 만들기' : '방 만들기'}</h2>
+        <h2 className="text-lg font-black text-gold-400">{game === 'seotda' ? '🃏 섯다 방 만들기' : game === 'omok' ? '⚪⚫ 오목 방 만들기' : game === 'yut' ? '🎲 윷놀이 방 만들기' : game === 'vegas' ? '💵 라스베가스 방 만들기' : game === 'yacht' ? '🎯 요트 다이스 방 만들기' : game === 'janggi' ? '♟️ 장기 방 만들기' : '방 만들기'}</h2>
         <input className="input" placeholder={`${user.name}의 방`} maxLength={20} value={name} onChange={(e) => setName(e.target.value)} />
         <div>
           <p className="mb-1 text-xs text-slate-300">{ANTE_GAMES.includes(game) ? '참가비(진 사람이 이긴 사람에게) — 입장하려면 참가비 × 10 이상 보유' : '판돈 (1점당) — 입장하려면 판돈 × 10 이상 보유'}</p>
@@ -88,31 +88,48 @@ function CreateRoom({ onClose, game = 'gostop' }) {
   );
 }
 
-const GAME_TITLE = { gostop: '🎴 고스톱', seotda: '🃏 섯다', omok: '⚪ 오목', yut: '🎲 윷놀이' };
-const ANTE_GAMES = ['seotda', 'omok', 'yut']; // 판돈 대신 참가비를 쓰는 게임
+const GAME_TITLE = { gostop: '🎴 고스톱', seotda: '🃏 섯다', omok: '⚪ 오목', yut: '🎲 윷놀이', vegas: '💵 라스베가스', yacht: '🎯 요트 다이스', janggi: '♟️ 장기' };
+const ANTE_GAMES = ['seotda', 'omok', 'yut', 'vegas', 'yacht', 'janggi']; // 판돈 대신 참가비를 쓰는 게임
+const ROOM_GAMES = ['gostop', 'seotda', 'omok', 'yut', 'vegas', 'yacht', 'janggi']; // 방을 만들어 하는 게임
 
 const PRACTICE_KEY = 'practice.setup';
 const loadPractice = () => {
   try {
-    return { level: 'normal', bet: 100, turnSec: 30, ...JSON.parse(localStorage.getItem(PRACTICE_KEY) || '{}') };
+    return { level: 'normal', bet: 100, turnSec: 30, bots: 1, ...JSON.parse(localStorage.getItem(PRACTICE_KEY) || '{}') };
   } catch {
-    return { level: 'normal', bet: 100, turnSec: 30 };
+    return { level: 'normal', bet: 100, turnSec: 30, bots: 1 };
   }
 };
 
-/** AI 1:1 연습 설정: 난이도 · 판돈 (마지막 선택을 기억) */
+// AI 상대 수: 오목·장기는 1:1, 라스베가스는 최대 5인(나 + AI 4), 나머지는 최대 4인(나 + AI 3)
+const MAX_BOTS = { omok: 1, gostop: 3, seotda: 3, yut: 3, vegas: 4, yacht: 3, janggi: 1 };
+const BOTS_NOTE = { gostop: (n) => (n === 3 ? '4인이면 판마다 한 명씩 돌아가며 쉬어요' : n === 1 ? '맞고(2인)' : '3인 고스톱'), yut: (n) => (n === 1 ? '청·홍 1:1' : n === 2 ? '나 + AI 한 팀 vs AI' : '2:2 팀전 (나 + AI vs AI 둘)'), seotda: (n) => `${n + 1}인`, vegas: (n) => (n === 1 ? '흰 주사위 4개씩 함께' : n === 2 ? '흰 주사위 2개씩 함께' : `${n + 1}인`), yacht: (n) => `${n + 1}인 · 12라운드` };
+
+/** AI 대전 설정: 난이도 · AI 상대 수 · 판돈 (마지막 선택을 기억) */
 function PracticeSetup({ onClose, game }) {
   const { emit } = useApp();
   const [cfg, setCfg] = useState(loadPractice);
+  const maxBots = MAX_BOTS[game] ?? 1;
+  const bots = Math.min(maxBots, Math.max(1, cfg.bots || 1));
   const start = async () => {
     try { localStorage.setItem(PRACTICE_KEY, JSON.stringify(cfg)); } catch { /* 저장소 없음 */ }
-    const r = await emit('room:practice', { game, level: cfg.level, bet: cfg.bet, ...(game === 'omok' ? { turnSec: cfg.turnSec } : {}), ...(cfg.level === 'auto' ? { skill: getSkill() } : {}) });
+    const r = await emit('room:practice', { game, level: cfg.level, bots, bet: cfg.bet, ...(game === 'omok' ? { turnSec: cfg.turnSec } : {}), ...(cfg.level === 'auto' ? { skill: getSkill() } : {}) });
     if (r.ok) onClose();
   };
   return (
     <motion.div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="panel w-full max-w-md space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="AI 연습 설정">
-        <h2 className="text-lg font-black text-gold-400">🤖 AI 1:1 연습 · {GAME_TITLE[game]?.replace(/^\S+\s/, '')}</h2>
+      <motion.div className="panel w-full max-w-md space-y-4 bg-felt-800 p-5" initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="AI 대전 설정">
+        <h2 className="text-lg font-black text-gold-400">🤖 AI 대전 · {GAME_TITLE[game]?.replace(/^\S+\s/, '')}</h2>
+        <div>
+          <p className="mb-1 text-xs text-slate-300">AI 상대 수{maxBots === 1 ? ` — ${GAME_TITLE[game]?.replace(/^\S+\s/, '')}은 1:1 대국이에요` : ` — 나 포함 ${bots + 1}명${BOTS_NOTE[game] ? ` · ${BOTS_NOTE[game](bots)}` : ''}`}</p>
+          <div className={`grid gap-2 ${maxBots > 3 ? 'grid-cols-4' : 'grid-cols-3'}`} role="radiogroup" aria-label="AI 상대 수">
+            {Array.from({ length: Math.max(3, maxBots) }, (_, i) => i + 1).map((n) => (
+              <button key={n} role="radio" aria-checked={bots === n} disabled={n > maxBots} onClick={() => setCfg((c) => ({ ...c, bots: n }))} className={`btn ${bots === n ? 'btn-gold' : 'btn-ghost'}`}>
+                {'🤖'.repeat(n)} {n}명
+              </button>
+            ))}
+          </div>
+        </div>
         <div>
           <p className="mb-1 text-xs text-slate-300">난이도</p>
           <div className="grid gap-2">
@@ -213,6 +230,7 @@ export function Lobby() {
   const [practicing, setPracticing] = useState(false);
   const [game, setGame] = useState('gostop'); // 선택한 게임 탭
   const [tab, setTab] = useState('rank'); // 오른쪽(모바일에선 아래) 패널 탭
+  const [solo, setSolo] = useState(null); // 들어가 있는 혼자 하는 게임(slot | sudoku)
   const sideRef = React.useRef(null);
   const openProfile = () => {
     setTab('me');
@@ -221,13 +239,14 @@ export function Lobby() {
   const gameRooms = rooms.filter((r) => (r.game ?? 'gostop') === game);
   const optNames = (o) => Object.keys(OPTION_LABELS).filter((k) => o[k]).map((k) => OPTION_LABELS[k][0]);
 
+  if (solo) return <SoloRoom game={solo} onExit={() => setSolo(null)} />;
+
   return (
     <div className="min-h-full bg-cover bg-fixed bg-center" style={{ backgroundImage: 'linear-gradient(rgba(8,4,12,.55), rgba(8,4,12,.7)), url(/casino-bg.svg)' }}>
     <div className="mx-auto flex min-h-full max-w-6xl flex-col gap-3 p-3">
       <header className="panel flex flex-wrap items-center justify-between gap-2 bg-black/65 px-4 py-3">
-        <h1 className="flex items-center gap-2 text-2xl font-black tracking-wide">
-          <span>🎰</span>
-          <span className="bg-gradient-to-b from-yellow-200 to-amber-500 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(255,200,80,.5)]">강원랜드</span>
+        <h1>
+          <Logo size={40} textClass="text-2xl" />
         </h1>
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm">
           <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-500'}`} title={connected ? '연결됨' : '연결 끊김'} />
@@ -263,14 +282,14 @@ export function Lobby() {
       </nav>
 
       <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[1fr_320px]">
-        {game === 'slot' ? <Suspense fallback={<Loading small />}><SlotMachine /></Suspense> : game === 'sudoku' ? <Suspense fallback={<Loading small />}><SudokuGame /></Suspense> : !['gostop', 'seotda', 'omok', 'yut'].includes(game) ? <ComingSoon gameId={game} /> : (
+        {SOLO_GAMES.includes(game) ? <SoloEntry game={game} onEnter={() => setSolo(game)} /> : !ROOM_GAMES.includes(game) ? <ComingSoon gameId={game} /> : (
         <section className="panel flex min-h-0 min-w-0 flex-col bg-black/65 p-3" data-tour="rooms">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold">{GAME_TITLE[game]} 방 목록 ({gameRooms.length})</h2>
             <div className="flex gap-2">
-              {(game === 'gostop' || game === 'seotda' || game === 'omok' || game === 'yut') && (
-                <button className="btn btn-ghost whitespace-nowrap" title="AI 와 둘이서 연습 – 머니/전적에 반영되지 않습니다" onClick={() => setPracticing(true)} data-tour="practice">
-                  🤖 AI 1:1 연습하기
+              {ROOM_GAMES.includes(game) && (
+                <button className="btn btn-ghost whitespace-nowrap" title="난이도와 AI 상대 수를 골라 바로 시작 – 머니/전적에 반영되지 않습니다" onClick={() => setPracticing(true)} data-tour="practice">
+                  🤖 AI 대전
                 </button>
               )}
               <button className="btn btn-gold whitespace-nowrap" onClick={() => setCreating(true)}>+ 방 만들기</button>

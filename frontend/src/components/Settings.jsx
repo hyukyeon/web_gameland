@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { isBgmOn, isSoundOn, setBgmOn, setSoundOn, onSoundChange } from '../sound.js';
-import { useSettings, setSettings, SPEEDS, CARD_SIZES, OMOK_THEMES, OMOK_STONES, OMOK_NUMBERS, OMOK_CONFIRM, vibrate } from '../settings.js';
+import { useSettings, setSettings, SPEEDS, MOTIONS, CARD_SIZES, OMOK_THEMES, OMOK_STONES, OMOK_NUMBERS, OMOK_CONFIRM, vibrate } from '../settings.js';
 import { canInstall, promptInstall, onInstallChange, isStandalone } from '../pwa.js';
 import { restartTour } from './Tutorial.jsx';
 import { SHORTCUTS } from '../keys.js';
@@ -93,6 +93,9 @@ export function SettingsModal({ onClose }) {
         </Row>
         <Row title="🎬 연출 속도" hint="패 이동·정산·섯다 배분">
           <Seg label="연출 속도" value={st.speed} options={SPEEDS} onChange={(v) => setSettings({ speed: v })} />
+        </Row>
+        <Row title="✨ 애니메이션" hint="패가 날아가는 움직임 · 기기 설정은 '동작 줄이기'를 따름">
+          <Seg label="애니메이션" value={st.motion} options={MOTIONS} onChange={(v) => setSettings({ motion: v })} />
         </Row>
         <Row title="🎴 카드 크기">
           <Seg label="카드 크기" value={st.cardSize} options={CARD_SIZES} onChange={(v) => setSettings({ cardSize: v })} />

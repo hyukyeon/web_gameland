@@ -37,7 +37,7 @@ LAYOUT.forEach((row, m) => {
 });
 
 // 보너스 쌍피(옵션, 이미지 없음 → UI 에서 CSS 로 렌더). month 0 이라 어떤 패와도 매칭되지 않는다.
-export const BONUS_IDS = [48, 49];
+export const BONUS_IDS = [48, 49, 50];
 const BONUS_CARDS = BONUS_IDS.map((id) => ({ id, month: 0, kind: 'bonus', tti: null, bi: false, godori: false, dual: false }));
 const TABLE = [...CARDS, ...BONUS_CARDS];
 

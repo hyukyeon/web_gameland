@@ -9,7 +9,7 @@ import { cardValue } from './AiPlayer.js';
  *  - 패 선택 EV = 확정 매칭 점수 + 더미 매칭 기대치(Odds) − 상대에게 내주는 리스크(방어) − 뻑 위험
  *  - 고/스톱: 지금 스톱하는 점수와, 고를 불렀을 때의 기대치(추가 득점 확률 vs 상대 역전 확률)를 비교
  */
-const FULL = 48; // 보너스패(48,49)는 월이 없어 카운팅 대상에서 제외
+const FULL = 48; // 보너스패(48~50)는 월이 없어 카운팅 대상에서 제외
 
 export class HeuristicBot {
   constructor(pid, { rnd = Math.random } = {}) {

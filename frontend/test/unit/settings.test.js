@@ -50,4 +50,13 @@ describe('settings', () => {
     s.setSettings({ vibrate: true });
     expect(() => s.vibrate(30)).not.toThrow();
   });
+
+  test('애니메이션: 기본은 OS 동작 줄이기와 상관없이 켬, 기기 설정·끄기 선택', async () => {
+    const s = await fresh();
+    expect(s.getSettings().motion).toBe('on');
+    expect(s.reducedMotionOf('on')).toBe('never');
+    expect(s.reducedMotionOf('auto')).toBe('user');
+    expect(s.reducedMotionOf('off')).toBe('always');
+    expect(s.reducedMotionOf(undefined)).toBe('never');
+  });
 });

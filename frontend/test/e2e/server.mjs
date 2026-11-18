@@ -19,6 +19,7 @@ const env = {
   LOGIN_RATE_MAX: '0',
   REGISTER_RATE_MAX: '0',
   BOT_DELAY_SCALE: '0.25',
+  VEGAS_ROUND_MS: '1500', // 라스베가스 라운드 정산 화면 시간 (기본 6초)
   GOSTOP_TURN_MS: '60000',
 };
 execSync('npx prisma migrate deploy', { cwd: backend, env, stdio: 'pipe' });

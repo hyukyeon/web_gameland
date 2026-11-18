@@ -328,9 +328,9 @@ describe('광팔기', () => {
 });
 
 describe('보너스 카드', () => {
-  test('옵션을 켜면 덱이 50장 (2인: 딜 후 합계 50)', () => {
+  test('옵션을 켜면 덱이 51장 (보너스 3장, 2인: 딜 후 합계 51)', () => {
     const g = new GostopGame([A, B], { bonus: true, rnd: seeded(5) });
-    expect(new Set(allCards(g)).size).toBe(50);
+    expect(new Set(allCards(g)).size).toBe(51);
   });
   test('옵션이 꺼져 있으면 보너스패가 없다', () => {
     const g = new GostopGame([A, B], { rnd: seeded(5) });
@@ -361,6 +361,13 @@ describe('보너스 카드', () => {
     expect(g.captured[A]).toEqual(expect.arrayContaining([49, 25, 24]));
     expect(g.turn).toBe(B);
   });
+  test('세 번째 보너스패(50)도 쌍피 — 연달아 나오면 계속 뒤집는다', () => {
+    expect(computeScore([48, 49, 50, 2, 3, 6, 7]).pi).toBe(10);
+    const g = mk([A, B], { hands: { [A]: [20, 21], [B]: [30] }, floor: [24], stock: [50, 48, 25, 40] });
+    g.play(A, 20);
+    expect(g.captured[A]).toEqual(expect.arrayContaining([50, 48, 25, 24]));
+    expect(g.stock).toEqual([40]);
+  });
   test('보너스패로 더미가 비면 턴 종료', () => {
     const g = mk([A, B], { hands: { [A]: [20], [B]: [] }, floor: [24], stock: [49] });
     g.play(A, 20);
@@ -372,7 +379,7 @@ describe('보너스 카드', () => {
       const g = new GostopGame([A, B], { bonus: true, rnd: seeded(s) });
       expect(g.floor.filter((id) => id >= 48)).toEqual([]);
       expect(g.floor).toHaveLength(8);
-      expect(new Set(allCards(g)).size).toBe(50);
+      expect(new Set(allCards(g)).size).toBe(51);
     }
   });
 });
@@ -389,7 +396,7 @@ describe('N인 무작위 불변식', () => {
     test.each(Array.from({ length: 120 }, (_, i) => i + 1))(`${name} seed %i`, (seed) => {
       const rnd = seeded(seed * 104729);
       const g = new GostopGame(pids, { rnd, firstPlayer: pids[0], ...opts });
-      const total = g.bonusOn ? 50 : 48;
+      const total = g.bonusOn ? 51 : 48;
       for (let step = 0; step < 600 && g.phase !== 'ended'; step++) {
         const p = g.turn;
         let r;

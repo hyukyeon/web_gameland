@@ -11,7 +11,7 @@ const DIFF = [
   ['medium', '중 (보통)'],
   ['hard', '상 (어려움)'],
 ];
-const SAVE_KEY = 'sudoku.progress'; // { id, board, startedAt } — 새로고침해도 이어서
+const SAVE_KEY = 'sudoku.progress'; // { id, board, startedAt } — 새로고침 대비 자동 저장(이 기기). '저장하고 나가기'는 서버(DB)에 저장
 
 const load = () => {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { return null; }
@@ -37,8 +37,9 @@ function conflictsOf(board) {
 
 const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
-export function SudokuGame() {
-  const { token, updateUser } = useApp();
+/** onExit: 화면에서 나가기 (저장하고 나가기 후 호출). exitRef: 바깥 '나가기' 버튼도 저장하고 나가도록 저장 함수를 걸어 둔다 */
+export function SudokuGame({ onExit, exitRef }) {
+  const { token, updateUser, notify } = useApp();
   const [info, setInfo] = useState(null); // { cleared, limit, left, reward }
   const [difficulty, setDifficulty] = useState('medium');
   const [puzzle, setPuzzle] = useState(null); // { id, difficulty, puzzle }
@@ -51,10 +52,12 @@ export function SudokuGame() {
   const [busy, setBusy] = useState(false);
   const submitted = useRef(null); // 같은 판을 자동 제출로 두 번 보내지 않게
 
-  const begin = useCallback((p, saved) => {
+  // p.board/p.elapsed: 서버에 저장해 둔 판. 이 기기의 자동 저장(local)이 같은 문제이고 더 최근이면 그쪽을 쓴다
+  const begin = useCallback((p, local) => {
+    const mine = local?.id === p.id && Array.isArray(local.board) && (local.savedAt ?? 0) > (p.savedAt ?? 0);
     setPuzzle(p);
-    setBoard(saved?.id === p.id && Array.isArray(saved.board) ? saved.board : [...p.puzzle]);
-    setStartedAt(saved?.id === p.id && saved.startedAt ? saved.startedAt : Date.now());
+    setBoard(mine ? local.board : Array.isArray(p.board) ? p.board : [...p.puzzle]);
+    setStartedAt(mine && local.startedAt ? local.startedAt : Date.now() - (p.elapsed ?? 0) * 1000);
     setSel(null);
     setResult(null);
     setError('');
@@ -87,7 +90,7 @@ export function SudokuGame() {
   }, [token, begin, newGame]);
 
   useEffect(() => {
-    if (puzzle && board) save({ id: puzzle.id, board, startedAt });
+    if (puzzle && board) save({ id: puzzle.id, board, startedAt, savedAt: Date.now() });
   }, [puzzle, board, startedAt]);
 
   useEffect(() => {
@@ -170,12 +173,29 @@ export function SudokuGame() {
   const elapsed = Math.max(0, Math.round(((result ? startedAt + (result.seconds ?? 0) * 1000 : now) - startedAt) / 1000));
   const selVal = sel != null && board ? board[sel] : 0;
 
+  /** 저장하고 나가기: 풀던 판을 서버에 저장 → 다른 기기·서버 재시작 뒤에도 이어서. 다 푼 판(결과 창)은 저장할 게 없다 */
+  const [saving, setSaving] = useState(false);
+  const saveAndExit = async () => {
+    if (saving) return;
+    if (!puzzle || !board || result) return onExit?.();
+    setSaving(true);
+    setError('');
+    try {
+      await api.sudokuSave(token, puzzle.id, board, Math.round((Date.now() - startedAt) / 1000));
+      onExit?.();
+    } catch (e) {
+      // 저장에 실패해도 갇히지 않게 나간다 — 이 기기의 자동 저장(localStorage)으로는 이어 풀 수 있다
+      notify?.(`서버에 저장하지 못했어요(${e.message}). 이 기기에서는 이어서 풀 수 있어요.`);
+      onExit?.();
+    }
+  };
+  if (exitRef) exitRef.current = saveAndExit;
+
   return (
-    <section className="panel relative flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto bg-black/65 p-3 sm:p-4">
+    <section className="relative flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto p-3 sm:p-4">
       {/* 상태 패널: 난이도 · 오늘 보상 현황 */}
       <div className="w-full max-w-md space-y-2 md:max-w-[40rem]">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <b className="text-gold-400">🧩 스도쿠</b>
           <div className="flex items-center gap-2 text-sm">
             <label htmlFor="sudoku-diff" className="text-slate-300">난이도</label>
             <select
@@ -189,6 +209,11 @@ export function SudokuGame() {
             </select>
             <button className="btn btn-gold !px-3 !py-1" onClick={() => newGame(difficulty)} disabled={busy}>새 문제</button>
           </div>
+          {onExit && (
+            <button className="btn btn-ghost !px-3 !py-1 text-sm" onClick={saveAndExit} disabled={saving || busy} title="풀던 판과 걸린 시간을 저장하고 로비로 — 다음에 이어서 풀어요">
+              {saving ? '저장 중…' : '💾 저장하고 나가기'}
+            </button>
+          )}
         </div>
         <div className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm">
           <span>

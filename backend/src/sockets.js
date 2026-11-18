@@ -2,11 +2,19 @@ import { Server } from 'socket.io';
 import { prisma } from './db.js';
 import { verifyToken, publicUser, displayName, avatarUrl, BOT_PREFIX } from './auth.js';
 import { bus } from './events.js';
-import { settleGame, settleSeotda, settleOmok, settleYut, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
+import { isEmoteFor } from './emotes.js';
+import { settleGame, settleSeotda, settleOmok, settleYut, settleVegas, settleYacht, settleJanggi, recordSeotdaPractice, outcomesOf, recordPractice } from './settle.js';
 import { SeotdaGame } from './seotda/SeotdaGame.js';
 import { OmokGame } from './omok/OmokGame.js';
 import { YutGame } from './yut/YutGame.js';
 import { YutBot } from './yut/YutBot.js';
+import { VegasGame } from './vegas/VegasGame.js';
+import { VegasBot } from './vegas/VegasBot.js';
+import { YachtGame } from './yacht/YachtGame.js';
+import { YachtBot } from './yacht/YachtBot.js';
+import { JanggiGame } from './janggi/JanggiGame.js';
+import { JanggiBot } from './janggi/JanggiBot.js';
+import { FORMATIONS as JANGGI_FORMATIONS } from './janggi/rules.js';
 import { pickMove, analyze as analyzeMoves, closePool } from './omok/aiPool.js';
 import * as metrics from './omok/metrics.js';
 import { achievementById, titleText, recordOmokPractice } from './stats.js';
@@ -15,18 +23,15 @@ import {
   parseLevel, pickPersona, personaByKey, botDisplayName, botAvatar, botLine,
   makeGostopBrain, makeSeotdaBrain, makeOmokBrain, proxyGostopBrain, proxySeotdaBrain, proxyOmokBrain, gostopReactions, seotdaReactions,
 } from './bots.js';
-import { BET_OPTIONS, BOT_DELAY_SCALE, RECONNECT_GRACE_MS, SEOTDA_TURN_MS, SEOTDA_REMATCH_MS, GOSTOP_TURN_MS, AUTO_AFTER_TIMEOUTS, SEOTDA_VOTE_MS, OMOK_TURN_MS, OMOK_TURN_CHOICES, OMOK_UNDO_LIMIT, OMOK_PRACTICE_UNDOS, OMOK_UNDO_ASK_MS, YUT_TURN_MS } from './config.js';
+import { BET_OPTIONS, BOT_DELAY_SCALE, RECONNECT_GRACE_MS, SEOTDA_TURN_MS, SEOTDA_REMATCH_MS, GOSTOP_TURN_MS, AUTO_AFTER_TIMEOUTS, SEOTDA_VOTE_MS, OMOK_TURN_MS, OMOK_TURN_CHOICES, OMOK_UNDO_LIMIT, OMOK_PRACTICE_UNDOS, OMOK_UNDO_ASK_MS, YUT_TURN_MS, VEGAS_TURN_MS, VEGAS_ROUND_MS, YACHT_TURN_MS, JANGGI_TURN_MS, JANGGI_SETUP_MS } from './config.js';
 
 const MIN_MONEY_MULT = 10; // 입장하려면 판돈 × 10 이상 보유
 const MAX_PLAYERS = 4;
-const maxPlayersOf = (type) => (type === 'omok' ? 2 : MAX_PLAYERS);
-const YUT_EMOTES = ['윷이다! 🎉', '아이고 잡혔네', '모야 모!', '한 판 더!'];
-const gameType = (g) => (g === 'seotda' || g === 'omok' || g === 'yut' ? g : 'gostop');
+const maxPlayersOf = (type) => (type === 'omok' || type === 'janggi' ? 2 : type === 'vegas' ? 5 : MAX_PLAYERS);
+const ROOM_GAMES = ['seotda', 'omok', 'yut', 'vegas', 'yacht', 'janggi'];
+const gameType = (g) => (ROOM_GAMES.includes(g) ? g : 'gostop');
 const MAX_SPECTATORS = 8;
 const GIRI_MS = 1800; // 판 시작 기리 연출 시간 (클라이언트와 맞춘다)
-// 타짜 명대사 매크로: 클라이언트가 보낸 임의 문자열은 받지 않고 이 목록의 것만 방송한다
-export const EMOTES = ['묻고 더블로 가!', '싸늘하다...', '동작그만 밑장빼기냐?', '아수라발발타'];
-export const OMOK_EMOTES = ['좋은 수네요 👍', '아차!', '잠깐만요… 생각 중이에요', '한 판 더 해요!'];
 const OMOK_HINTS = 3; // 연습 판당 힌트 횟수
 const OPTION_KEYS = ['bonus', 'ppeokPay', 'chongtong', 'ttibak', 'nagariCarry'];
 
@@ -53,7 +58,7 @@ export function attachSockets(httpServer, corsOrigin) {
 
   const clean = (t, max = 200) => (typeof t === 'string' ? t.trim().slice(0, max) : '');
   const ack = (cb, payload) => typeof cb === 'function' && cb(payload);
-  const isCardId = (v) => Number.isInteger(v) && v >= 0 && v < 50;
+  const isCardId = (v) => Number.isInteger(v) && v >= 0 && v <= 50; // 0~47 + 보너스 48~50
 
   // ---------- 브로드캐스트 ----------
   const roomSummary = (r) => ({
@@ -177,6 +182,12 @@ export function attachSockets(httpServer, corsOrigin) {
       if (g.phase === 'playing') startOmokTurn(room);
     } else if (room.type === 'yut') {
       if (g.phase !== 'ended') startYutTurn(room);
+    } else if (room.type === 'vegas') {
+      if (g.phase === 'roll' || g.phase === 'place') startVegasTurn(room);
+    } else if (room.type === 'yacht') {
+      if (g.phase !== 'ended') startYachtTurn(room);
+    } else if (room.type === 'janggi') {
+      if (g.phase === 'playing') startJanggiTurn(room);
     } else scheduleTurn(room, null);
   }
 
@@ -192,7 +203,7 @@ export function attachSockets(httpServer, corsOrigin) {
 
   const newRoom = (host, name, bet, opts, type = 'gostop') => ({
     id: roomSeq++,
-    type, // 'gostop' | 'seotda' | 'omok'
+    type, // 'gostop' | 'seotda' | 'omok' | 'yut' | 'vegas' | 'yacht' | 'janggi'
     name,
     bet,
     hostId: host.id,
@@ -296,6 +307,9 @@ export function attachSockets(httpServer, corsOrigin) {
     if (room.type === 'seotda') return startSeotda(room);
     if (room.type === 'omok') return startOmok(room);
     if (room.type === 'yut') return startYut(room);
+    if (room.type === 'vegas') return startVegas(room);
+    if (room.type === 'yacht') return startYacht(room);
+    if (room.type === 'janggi') return startJanggi(room);
     room.status = 'playing';
     room.brains = new Map(); // 새 판: 봇의 카운팅 기억 초기화
     const ids = room.players.map((p) => p.id);
@@ -895,6 +909,357 @@ export function attachSockets(httpServer, corsOrigin) {
     startYutTurn(room);
   }
 
+  // ---------- 라스베가스 ----------
+  function clearVegasTimer(room) {
+    for (const k of ['vegas', 'vegas-bot', 'vegas-round']) {
+      clearTimeout(room.timers.get(k));
+      room.timers.delete(k);
+    }
+  }
+
+  const vegasBot = (room, pid) => {
+    room.vegasBots ??= new Map();
+    if (!room.vegasBots.has(pid)) {
+      const p = playerOf(room, pid);
+      room.vegasBots.set(pid, new VegasBot({ level: p?.bot ? p.level : 'hard' }));
+    }
+    return room.vegasBots.get(pid);
+  };
+
+  /** 서버가 대신 한 단계: 굴리기 단계면 굴리고, 놓기 단계면 AI 가 고른 눈을 놓는다 */
+  function vegasAuto(room, game, who) {
+    if (room.game !== game || game.turn !== who || (game.phase !== 'roll' && game.phase !== 'place')) return;
+    const r = game.phase === 'roll' ? game.rollDice(who) : game.place(who, vegasBot(room, who).decide(game, who));
+    if (r.ok) handleVegas(room, game);
+  }
+
+  function startVegasTurn(room) {
+    const game = room.game;
+    clearVegasTimer(room);
+    if (!game || game.phase === 'ended' || rooms.get(room.id) !== room) return;
+    if (game.phase === 'roundEnd') {
+      // 라운드 정산 화면을 보여 준 뒤 다음 라운드
+      const t = setTimeout(() => {
+        room.timers.delete('vegas-round');
+        if (room.game !== game || !game.nextRound().ok) return;
+        handleVegas(room, game);
+      }, VEGAS_ROUND_MS);
+      t.unref?.();
+      room.timers.set('vegas-round', t);
+      return;
+    }
+    const who = game.turn;
+    const auto = isProxied(room, who);
+    const deadlineAt = auto ? null : Date.now() + VEGAS_TURN_MS;
+    io.to(`room:${room.id}`).emit('TURN_START', { game: 'vegas', userId: who, deadlineAt, auto, phase: game.phase });
+    if (auto) {
+      // 놓기는 굴린 주사위 연출을 볼 시간을 두고
+      const wait = game.phase === 'roll' ? 600 + Math.random() * 400 : 1500 + Math.random() * 500;
+      const t = setTimeout(() => {
+        room.timers.delete('vegas-bot');
+        vegasAuto(room, game, who);
+      }, wait * BOT_DELAY_SCALE);
+      t.unref?.();
+      room.timers.set('vegas-bot', t);
+      return;
+    }
+    const phase = game.phase;
+    const t = setTimeout(() => {
+      if (room.game !== game || game.turn !== who || game.phase !== phase) return;
+      noteTimeout(room, who);
+      vegasAuto(room, game, who);
+    }, VEGAS_TURN_MS);
+    t.unref?.();
+    room.timers.set('vegas', t);
+  }
+
+  /** 굴리기·놓기·라운드 전환·기권 뒤: 상태 방송 → (끝났으면 정산 / 아니면 다음 단계) */
+  function handleVegas(room, game) {
+    for (const v of viewers(room)) online.get(v.id)?.emit('vegas:state', { view: game.view() });
+    if (game.phase === 'ended') {
+      clearVegasTimer(room);
+      return finishVegas(room, game);
+    }
+    return startVegasTurn(room);
+  }
+
+  async function finishVegas(room, game) {
+    if (room.game !== game) return;
+    const res = game.result;
+    const pids = game.pids;
+    room.status = 'waiting';
+    room.game = null;
+    room.vegasBots = null;
+    // 다음 판은 다음 자리가 선
+    const ids = room.players.map((p) => p.id);
+    room.first = ids[(ids.indexOf(pids[game.firstIdx]) + 1) % ids.length] ?? ids[0];
+    resetReady(room);
+    const ranked = isRankedRoom(room);
+    let payout = null;
+    try {
+      if (ranked) payout = await settleVegas({ roomName: room.name, ante: room.bet, pids, result: res });
+    } catch (e) {
+      console.error('vegas settle failed', e);
+      sysChat(room, '정산 중 오류가 발생했습니다.');
+    }
+    const overPayload = { result: res, payout, ante: room.bet, ranked, vegas: true };
+    io.to(`room:${room.id}`).emit('vegas:over', overPayload);
+    for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winners.includes(bid) ? 'win' : 'lose', 900 * BOT_DELAY_SCALE);
+    for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
+    for (const p of room.players) pushUser(p.id);
+    emitRoom(room);
+    broadcastRooms();
+    afterGame(room);
+  }
+
+  function startVegas(room) {
+    room.status = 'playing';
+    room.vegasBots = new Map();
+    const ids = room.players.map((p) => p.id);
+    room.game = new VegasGame(ids, { ante: room.bet, first: ids.includes(room.first) ? room.first : ids[0] });
+    for (const v of viewers(room)) online.get(v.id)?.emit('vegas:start', { view: room.game.view(), ranked: isRankedRoom(room) });
+    emitRoom(room);
+    broadcastRooms();
+    startVegasTurn(room);
+  }
+
+  // ---------- 요트 다이스 ----------
+  function clearYachtTimer(room) {
+    for (const k of ['yacht', 'yacht-bot']) {
+      clearTimeout(room.timers.get(k));
+      room.timers.delete(k);
+    }
+  }
+
+  const yachtBot = (room, pid) => {
+    room.yachtBots ??= new Map();
+    if (!room.yachtBots.has(pid)) {
+      const p = playerOf(room, pid);
+      room.yachtBots.set(pid, new YachtBot({ level: p?.bot ? p.level : 'hard' }));
+    }
+    return room.yachtBots.get(pid);
+  };
+
+  /** 서버가 대신 한 단계: AI 가 고른 행동(굴리기 — 고정 표시 포함 — 또는 기록) */
+  function yachtAuto(room, game, who) {
+    if (room.game !== game || game.turn !== who || game.phase === 'ended') return;
+    const a = yachtBot(room, who).decide(game, who);
+    let r;
+    if (a.type === 'roll') {
+      if (a.held) game.hold(who, a.held);
+      r = game.roll(who);
+    } else r = game.score(who, a.cat);
+    if (r.ok) handleYacht(room, game);
+  }
+
+  function startYachtTurn(room) {
+    const game = room.game;
+    clearYachtTimer(room);
+    if (!game || game.phase === 'ended' || rooms.get(room.id) !== room) return;
+    const who = game.turn;
+    const auto = isProxied(room, who);
+    const deadlineAt = auto ? null : Date.now() + YACHT_TURN_MS;
+    io.to(`room:${room.id}`).emit('TURN_START', { game: 'yacht', userId: who, deadlineAt, auto, phase: game.phase });
+    if (auto) {
+      // 굴린 주사위를 볼 시간을 두고
+      const wait = game.phase === 'roll' ? 700 + Math.random() * 400 : 1300 + Math.random() * 500;
+      const t = setTimeout(() => {
+        room.timers.delete('yacht-bot');
+        yachtAuto(room, game, who);
+      }, wait * BOT_DELAY_SCALE);
+      t.unref?.();
+      room.timers.set('yacht-bot', t);
+      return;
+    }
+    const seq = game.seq;
+    const t = setTimeout(() => {
+      if (room.game !== game || game.turn !== who || game.seq !== seq) return;
+      noteTimeout(room, who);
+      yachtAuto(room, game, who);
+    }, YACHT_TURN_MS);
+    t.unref?.();
+    room.timers.set('yacht', t);
+  }
+
+  /** 굴리기·고정·기록·기권 뒤: 상태 방송 → (끝났으면 정산 / 아니면 다음 단계). 고정만 바꾼 경우는 타이머를 다시 걸지 않는다 */
+  function handleYacht(room, game, { restart = true } = {}) {
+    for (const v of viewers(room)) online.get(v.id)?.emit('yacht:state', { view: game.view() });
+    if (game.phase === 'ended') {
+      clearYachtTimer(room);
+      return finishYacht(room, game);
+    }
+    return restart ? startYachtTurn(room) : undefined;
+  }
+
+  async function finishYacht(room, game) {
+    if (room.game !== game) return;
+    const res = game.result;
+    const pids = game.pids;
+    room.status = 'waiting';
+    room.game = null;
+    room.yachtBots = null;
+    const ids = room.players.map((p) => p.id);
+    room.first = ids[(ids.indexOf(pids[game.firstIdx]) + 1) % ids.length] ?? ids[0]; // 다음 판은 다음 자리가 먼저
+    resetReady(room);
+    const ranked = isRankedRoom(room);
+    let payout = null;
+    try {
+      if (ranked) payout = await settleYacht({ roomName: room.name, ante: room.bet, pids, result: res });
+    } catch (e) {
+      console.error('yacht settle failed', e);
+      sysChat(room, '정산 중 오류가 발생했습니다.');
+    }
+    const overPayload = { result: res, payout, ante: room.bet, ranked, yacht: true };
+    io.to(`room:${room.id}`).emit('yacht:over', overPayload);
+    for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winners.includes(bid) ? 'win' : 'lose', 900 * BOT_DELAY_SCALE);
+    for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
+    for (const p of room.players) pushUser(p.id);
+    emitRoom(room);
+    broadcastRooms();
+    afterGame(room);
+  }
+
+  function startYacht(room) {
+    room.status = 'playing';
+    room.yachtBots = new Map();
+    const ids = room.players.map((p) => p.id);
+    room.game = new YachtGame(ids, { ante: room.bet, first: ids.includes(room.first) ? room.first : ids[0] });
+    for (const v of viewers(room)) online.get(v.id)?.emit('yacht:start', { view: room.game.view(), ranked: isRankedRoom(room) });
+    emitRoom(room);
+    broadcastRooms();
+    startYachtTurn(room);
+  }
+
+  // ---------- 장기 ----------
+  function clearJanggiTimer(room) {
+    for (const k of ['janggi', 'janggi-bot', 'janggi-setup']) {
+      clearTimeout(room.timers.get(k));
+      room.timers.delete(k);
+    }
+  }
+
+  const janggiBot = (room, pid) => {
+    room.janggiBots ??= new Map();
+    if (!room.janggiBots.has(pid)) {
+      const p = playerOf(room, pid);
+      room.janggiBots.set(pid, new JanggiBot({ level: p?.bot ? p.level : 'hard' }));
+    }
+    return room.janggiBots.get(pid);
+  };
+
+  const janggiState = (room, game, move = null) => {
+    const payload = { view: game.view(), move, setupDeadline: room.janggiSetupAt ?? null };
+    for (const v of viewers(room)) online.get(v.id)?.emit('janggi:state', payload);
+  };
+
+  /** 서버가 대신 한 수 (둘 수가 없으면 한수 쉼) */
+  function janggiAuto(room, game, who) {
+    if (room.game !== game || game.turn !== who || game.phase !== 'playing') return;
+    const side = game.side[who];
+    const m = janggiBot(room, who).decide(game.board, side, { bikjangBy: game.bikjangBy });
+    const r = m ? game.move(who, m.from, m.to) : game.pass(who);
+    if (r.ok) handleJanggi(room, game, r.move);
+  }
+
+  function startJanggiTurn(room) {
+    const game = room.game;
+    clearJanggiTimer(room);
+    if (!game || game.phase !== 'playing' || rooms.get(room.id) !== room) return;
+    const who = game.turn;
+    const auto = isProxied(room, who);
+    const deadlineAt = auto ? null : Date.now() + JANGGI_TURN_MS;
+    io.to(`room:${room.id}`).emit('TURN_START', { game: 'janggi', userId: who, deadlineAt, auto });
+    if (auto) {
+      const t = setTimeout(() => {
+        room.timers.delete('janggi-bot');
+        janggiAuto(room, game, who);
+      }, (500 + Math.random() * 500) * BOT_DELAY_SCALE);
+      t.unref?.();
+      room.timers.set('janggi-bot', t);
+      return;
+    }
+    const seq = game.seq;
+    const t = setTimeout(() => {
+      if (room.game !== game || game.turn !== who || game.seq !== seq) return;
+      noteTimeout(room, who);
+      janggiAuto(room, game, who);
+    }, JANGGI_TURN_MS);
+    t.unref?.();
+    room.timers.set('janggi', t);
+  }
+
+  /** 착수·한수 쉼·상차림·기권 뒤: 상태 방송 → (끝났으면 정산 / 아니면 다음 차례) */
+  function handleJanggi(room, game, move = null) {
+    janggiState(room, game, move);
+    if (game.phase === 'ended') {
+      clearJanggiTimer(room);
+      return finishJanggi(room, game);
+    }
+    if (game.phase === 'playing') return startJanggiTurn(room);
+    return undefined;
+  }
+
+  async function finishJanggi(room, game) {
+    if (room.game !== game) return;
+    const res = game.result;
+    const pids = game.pids;
+    room.status = 'waiting';
+    room.game = null;
+    room.janggiBots = null;
+    room.janggiSetupAt = null;
+    // 다음 판은 초·한을 바꾼다
+    room.janggiCho = pids[1];
+    resetReady(room);
+    const ranked = isRankedRoom(room);
+    let payout = null;
+    try {
+      if (ranked) payout = await settleJanggi({ roomName: room.name, ante: room.bet, pids, result: res });
+    } catch (e) {
+      console.error('janggi settle failed', e);
+      sysChat(room, '정산 중 오류가 발생했습니다.');
+    }
+    const overPayload = { result: res, payout, ante: room.bet, ranked, janggi: true };
+    io.to(`room:${room.id}`).emit('janggi:over', overPayload);
+    for (const bid of botIdsOf(room)) if (pids.includes(bid)) botSay(room, bid, res.winner === bid ? 'win' : 'lose', 900 * BOT_DELAY_SCALE);
+    for (const p of room.players) if (!p.bot && !p.online) p.missedOver = overPayload;
+    for (const p of room.players) pushUser(p.id);
+    emitRoom(room);
+    broadcastRooms();
+    afterGame(room);
+  }
+
+  function startJanggi(room) {
+    room.status = 'playing';
+    room.janggiBots = new Map();
+    const ids = room.players.map((p) => p.id);
+    const cho = ids.includes(room.janggiCho) ? room.janggiCho : ids[0]; // 첫 판은 방장이 초, 다음 판부터 번갈아
+    const han = ids.find((id) => id !== cho);
+    const game = new JanggiGame({ cho, han, ante: room.bet });
+    room.game = game;
+    room.janggiSetupAt = Date.now() + JANGGI_SETUP_MS;
+    for (const v of viewers(room)) online.get(v.id)?.emit('janggi:start', { view: game.view(), ranked: isRankedRoom(room), setupDeadline: room.janggiSetupAt });
+    emitRoom(room);
+    broadcastRooms();
+    // 상차림: AI 는 바로 고르고(무작위), 사람은 제한 시간 안에. 시간이 지나면 안 고른 쪽은 기본 상차림
+    for (const pid of game.pids) {
+      if (!playerOf(room, pid)?.bot) continue;
+      const t = setTimeout(() => {
+        if (room.game !== game || game.phase !== 'setup') return;
+        game.setup(pid, JANGGI_FORMATIONS[Math.floor(Math.random() * JANGGI_FORMATIONS.length)]);
+        handleJanggi(room, game);
+      }, (400 + Math.random() * 600) * BOT_DELAY_SCALE);
+      t.unref?.();
+    }
+    const t = setTimeout(() => {
+      room.timers.delete('janggi-setup');
+      if (room.game !== game || game.phase !== 'setup') return;
+      game.setupDefaults();
+      handleJanggi(room, game);
+    }, JANGGI_SETUP_MS);
+    t.unref?.();
+    room.timers.set('janggi-setup', t);
+  }
+
   function withGame(socket, cb, fn) {
     const uid = socket.data.user.id;
     const room = rooms.get(userRoom.get(uid));
@@ -941,7 +1306,7 @@ export function attachSockets(httpServer, corsOrigin) {
     if (room.game && forfeit) {
       const game = room.game;
       const r = game.forfeit(uid);
-      if (r.ok) await (room.type === 'seotda' ? handleSeotdaEvents(room, game, r.events) : room.type === 'omok' ? handleOmokMove(room, game, null) : room.type === 'yut' ? afterYutForfeit(room, game, uid, r) : handleGameResult(room, game, r.frames));
+      if (r.ok) await (room.type === 'seotda' ? handleSeotdaEvents(room, game, r.events) : room.type === 'omok' ? handleOmokMove(room, game, null) : room.type === 'yut' ? afterYutForfeit(room, game, uid, r) : room.type === 'vegas' ? handleVegas(room, game) : room.type === 'yacht' ? handleYacht(room, game) : room.type === 'janggi' ? handleJanggi(room, game) : handleGameResult(room, game, r.frames));
     }
     const leaver = room.players.find((p) => p.id === uid);
     room.players = room.players.filter((p) => p.id !== uid);
@@ -993,7 +1358,7 @@ export function attachSockets(httpServer, corsOrigin) {
   /** 재접속/새로고침/복귀 시 클라이언트 상태를 서버 기준으로 통째로 덮어쓰는 스냅샷 */
   function syncPayload(uid) {
     const room = rooms.get(userRoom.get(uid));
-    if (!room) return { room: null, chat: [], view: null, seotda: null, omok: null, yut: null, tieVote: null, over: null, ranked: null, role: null };
+    if (!room) return { room: null, chat: [], view: null, seotda: null, omok: null, yut: null, vegas: null, yacht: null, janggi: null, tieVote: null, over: null, ranked: null, role: null };
     const me = room.players.find((p) => p.id === uid);
     const over = me?.missedOver ?? null;
     if (me) me.missedOver = null;
@@ -1004,6 +1369,9 @@ export function attachSockets(httpServer, corsOrigin) {
       seotda: room.game && room.type === 'seotda' ? room.game.view(uid) : null,
       omok: room.game && room.type === 'omok' ? room.game.view() : null,
       yut: room.game && room.type === 'yut' ? room.game.view() : null,
+      vegas: room.game && room.type === 'vegas' ? room.game.view() : null,
+      yacht: room.game && room.type === 'yacht' ? room.game.view() : null,
+      janggi: room.game && room.type === 'janggi' ? { view: room.game.view(), setupDeadline: room.janggiSetupAt ?? null } : null,
       tieVote: tieVotePayload(room.tieVote),
       over,
       ranked: isRankedRoom(room),
@@ -1214,7 +1582,7 @@ export function attachSockets(httpServer, corsOrigin) {
     });
 
     // ----- AI 봇 -----
-    // 로비 'AI 1:1 연습하기': 봇과 단둘이 바로 시작 (머니/전적 무변동)
+    // 로비 'AI 대전': 난이도·AI 상대 수(bots)를 골라 봇들과 바로 시작 (사람 1명이라 연습 — 머니/전적 무변동)
     socket.on('room:practice', async (payload, cb) => {
       if (userRoom.has(uid)) return ack(cb, { ok: false, error: '이미 방에 참여 중입니다.' });
       const me = await prisma.user.findUnique({ where: { id: uid } });
@@ -1224,18 +1592,23 @@ export function attachSockets(httpServer, corsOrigin) {
       const room = newRoom(me, `${displayName(me)}의 AI 연습`, bet, { ...parseOpts(payload?.opts), ...(type === 'omok' ? { turnSec: payload?.turnSec } : {}) }, type);
       rooms.set(room.id, room);
       userRoom.set(uid, room.id);
-      const bot = await acquireBot(room.id);
-      if (!bot) {
-        rooms.delete(room.id);
-        userRoom.delete(uid);
-        return ack(cb, { ok: false, error: 'AI 봇을 준비하지 못했습니다.' });
-      }
+      // AI 상대 수: 1 ~ (최대 인원 - 1). 오목은 1:1 고정
+      const count = Math.min(maxPlayersOf(type) - 1, Math.max(1, Math.floor(Number(payload?.bots)) || 1));
       // 적응형(오목): level 'auto' + 클라이언트가 기억한 실력(skill 0.1~1) → 연속 강도 봇
       const adaptive = type === 'omok' && payload?.level === 'auto';
       const skill = Math.min(1, Math.max(0.1, Number(payload?.skill) || 0.5));
-      const bp = botPlayer(room, bot, adaptive ? (skill < 0.35 ? 'easy' : skill < 0.75 ? 'normal' : 'hard') : payload?.level);
-      if (adaptive) Object.assign(bp, { adaptive: true, skill });
-      room.players.push(bp);
+      for (let i = 0; i < count; i++) {
+        const bot = await acquireBot(room.id);
+        if (!bot) {
+          room.players.filter((p) => p.bot).forEach((p) => userRoom.delete(p.id));
+          rooms.delete(room.id);
+          userRoom.delete(uid);
+          return ack(cb, { ok: false, error: 'AI 봇을 준비하지 못했습니다.' });
+        }
+        const bp = botPlayer(room, bot, adaptive ? (skill < 0.35 ? 'easy' : skill < 0.75 ? 'normal' : 'hard') : payload?.level);
+        if (adaptive) Object.assign(bp, { adaptive: true, skill });
+        room.players.push(bp);
+      }
       room.players[0].ready = true;
       joinRoomChannel(socket, room);
       socket.emit('room:joined', { room: roomState(room), chat: room.chat });
@@ -1281,7 +1654,7 @@ export function attachSockets(httpServer, corsOrigin) {
     socket.on('SEND_EMOTE', (payload, cb) => {
       const room = rooms.get(userRoom.get(uid));
       const text = typeof payload?.text === 'string' ? payload.text : '';
-      if (!room || !room.players.some((p) => p.id === uid) || !(EMOTES.includes(text) || (room.type === 'omok' && OMOK_EMOTES.includes(text)) || (room.type === 'yut' && YUT_EMOTES.includes(text)))) return ack(cb, { ok: false, error: '보낼 수 없는 표현입니다.' });
+      if (!room || !room.players.some((p) => p.id === uid) || !isEmoteFor(room.type ?? 'gostop', text)) return ack(cb, { ok: false, error: '보낼 수 없는 표현입니다.' });
       if (!chatOk()) return ack(cb, { ok: false, error: '너무 빠르게 보내고 있습니다.' });
       io.to(`room:${room.id}`).emit('BROADCAST_EMOTE', { userId: uid, name: socket.data.user.name, text, ts: Date.now() });
       return ack(cb, { ok: true });
@@ -1358,6 +1731,76 @@ export function attachSockets(httpServer, corsOrigin) {
       ack(cb, { ok: true });
       return handleYut(room, game);
     });
+    // 라스베가스: 굴리기 / 놓기
+    const vegasRoom = (cb) => {
+      const room = rooms.get(userRoom.get(uid));
+      if (!room || room.type !== 'vegas' || !room.game) return ack(cb, { ok: false, error: '진행 중인 라스베가스가 없습니다.' }) && null;
+      if (!room.players.some((p) => p.id === uid)) return ack(cb, { ok: false, error: '관전자는 조작할 수 없습니다.' }) && null;
+      return room;
+    };
+    socket.on('vegas:roll', (_p, cb) => {
+      const room = vegasRoom(cb);
+      if (!room) return undefined;
+      const game = room.game;
+      const r = game.rollDice(uid);
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleVegas(room, game);
+    });
+    socket.on('vegas:place', (payload, cb) => {
+      const room = vegasRoom(cb);
+      if (!room) return undefined;
+      const game = room.game;
+      const r = game.place(uid, Number(payload?.value));
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleVegas(room, game);
+    });
+    // 요트 다이스: 고정 / 굴리기 / 기록
+    const yachtRoom = (cb) => {
+      const room = rooms.get(userRoom.get(uid));
+      if (!room || room.type !== 'yacht' || !room.game) return ack(cb, { ok: false, error: '진행 중인 요트 다이스가 없습니다.' }) && null;
+      if (!room.players.some((p) => p.id === uid)) return ack(cb, { ok: false, error: '관전자는 조작할 수 없습니다.' }) && null;
+      return room;
+    };
+    const yachtAct = (fn, opts) => (payload, cb) => {
+      const room = yachtRoom(cb);
+      if (!room) return undefined;
+      const game = room.game;
+      const r = fn(game, payload);
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleYacht(room, game, opts);
+    };
+    socket.on('yacht:hold', yachtAct((g, p) => g.hold(uid, p?.held), { restart: false }));
+    socket.on('yacht:roll', yachtAct((g, p) => {
+      // 고정 정보를 같이 보내면 반영하고 굴린다 (따로 yacht:hold 를 먼저 보내도 된다)
+      if (Array.isArray(p?.held) && g.phase === 'decide') {
+        const h = g.hold(uid, p.held);
+        if (!h.ok) return h;
+      }
+      return g.roll(uid);
+    }));
+    socket.on('yacht:score', yachtAct((g, p) => g.score(uid, String(p?.cat ?? ''))));
+    // 장기: 상차림 / 착수 / 한수 쉼 / 기권
+    const janggiAct = (fn) => (payload, cb) => {
+      const room = rooms.get(userRoom.get(uid));
+      if (!room || room.type !== 'janggi' || !room.game) return ack(cb, { ok: false, error: '진행 중인 장기가 없습니다.' });
+      if (!room.players.some((p) => p.id === uid)) return ack(cb, { ok: false, error: '관전자는 조작할 수 없습니다.' });
+      const game = room.game;
+      const r = fn(game, payload);
+      if (!r.ok) return ack(cb, r);
+      playerOf(room, uid).timeouts = 0;
+      ack(cb, { ok: true });
+      return handleJanggi(room, game, r.move ?? null);
+    };
+    socket.on('janggi:setup', janggiAct((g, p) => g.setup(uid, String(p?.formation ?? ''))));
+    socket.on('janggi:move', janggiAct((g, p) => g.move(uid, Number(p?.from), Number(p?.to))));
+    socket.on('janggi:pass', janggiAct((g) => g.pass(uid)));
+    socket.on('janggi:resign', janggiAct((g) => g.resign(uid)));
     // 오목 착수
     socket.on('omok:place', (payload, cb) => {
       const room = rooms.get(userRoom.get(uid));
@@ -1544,6 +1987,18 @@ export function attachSockets(httpServer, corsOrigin) {
   };
   bus.on('profile', onProfile);
   httpServer.on('close', () => bus.off('profile', onProfile));
+
+  /** 첫 화면용 공개 현황: 접속자 수(봇 제외)와 게임별 열린 방·진행 중인 판 수 (개인 정보 없음) */
+  io.summary = () => {
+    const games = Object.fromEntries(['gostop', ...ROOM_GAMES].map((g) => [g, { rooms: 0, playing: 0 }]));
+    for (const r of rooms.values()) {
+      const g = games[r.type ?? 'gostop'];
+      if (!g) continue;
+      g.rooms++;
+      if (r.status !== 'waiting') g.playing++;
+    }
+    return { online: [...online.keys()].filter((id) => id > 0).length, games };
+  };
 
   return io;
 }

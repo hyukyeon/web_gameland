@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 export const PORT = Number(process.env.PORT) || 4000;
+// 듣는 주소. 비우면 모든 인터페이스, 127.0.0.1 이면 이 기기(리버스 프록시·tailscale funnel)로만 접속
+export const HOST = process.env.HOST || undefined;
 export const IS_PROD = process.env.NODE_ENV === 'production';
 const DEV_SECRET = 'dev-secret-change-me';
 // 운영(NODE_ENV=production)에서는 JWT_SECRET 환경변수가 반드시 있어야 한다. 없거나 기본값이면 서버를 띄우지 않는다.
@@ -47,3 +49,14 @@ export const REGISTER_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 // 윷놀이: 던지기/말 선택 한 단계당 제한 시간
 export const YUT_TURN_MS = Number(process.env.YUT_TURN_MS) || 30000;
+
+// 라스베가스: 굴리기/놓기 한 단계당 제한 시간, 라운드 정산 화면을 보여 주는 시간
+export const VEGAS_TURN_MS = Number(process.env.VEGAS_TURN_MS) || 30000;
+export const VEGAS_ROUND_MS = Number(process.env.VEGAS_ROUND_MS) || 6000;
+
+// 요트 다이스: 굴리기·고정·기록 한 단계당 제한 시간
+export const YACHT_TURN_MS = Number(process.env.YACHT_TURN_MS) || 30000;
+
+// 장기: 한 수 제한 시간, 상차림 고르는 시간
+export const JANGGI_TURN_MS = Number(process.env.JANGGI_TURN_MS) || 60000;
+export const JANGGI_SETUP_MS = Number(process.env.JANGGI_SETUP_MS) || 20000;

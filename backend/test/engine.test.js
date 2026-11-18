@@ -156,6 +156,43 @@ describe('특수 상황', () => {
     g.play(B, 24); // 바닥에 놓이고 더미 11 로 뻑 더미 먹기
     expect(g.captured[B]).toEqual(expect.arrayContaining([8, 9, 10, 11, 2]));
   });
+  test('뻑 + 더미에서 나온 보너스패: 보너스패도 획득하지 못하고 뻑 더미에 같이 남는다', () => {
+    // 손 8(3월) + 바닥 9 → 더미에서 보너스(48) → 한 장 더 뒤집어 10(3월) = 뻑
+    const g = mk({ a: [8, 20], b: [11, 30], floor: [9], stock: [48, 10, 40] });
+    const r = g.play(A, 8);
+    expect(banners(r)).toEqual(expect.arrayContaining(['bonus', 'ppeok']));
+    expect(g.captured[A]).toEqual([]); // 보너스패도 못 가져감
+    expect(g.floor).toEqual(expect.arrayContaining([8, 9, 10, 48]));
+    expect(g.ppeokBonus).toEqual({ 3: [48] });
+    expect(GostopGame.viewOf(g.snapshot(), A, [A, B]).ppeokBonus).toEqual({ 3: [48] }); // 화면에서 3월 더미에 같이 보인다
+    // 상대가 뻑 더미를 먹으면 보너스패도 함께
+    g.play(B, 11);
+    expect(g.captured[B]).toEqual(expect.arrayContaining([8, 9, 10, 11, 48]));
+    expect(g.floor).not.toContain(48);
+    expect(g.ppeokBonus).toEqual({});
+  });
+  test('뻑 + 손에서 낸 보너스패(같은 차례): 그 보너스패도 뻑 더미에 같이 남는다', () => {
+    // 보너스(48)를 내면 더미 한 장(20)을 받아 같은 차례를 이어감 → 8 을 내 9 와 짝 → 더미 10 = 뻑
+    const g = mk({ a: [48, 8], b: [11, 30], floor: [9], stock: [20, 10, 40] });
+    g.play(A, 48);
+    expect(g.captured[A]).toEqual([48]);
+    expect(g.turn).toBe(A);
+    g.play(A, 8);
+    expect(g.ppeokPiles[3]).toBe(A);
+    expect(g.captured[A]).toEqual([]);
+    expect(g.ppeokBonus[3]).toEqual([48]);
+    // 뻑 더미는 더미 뒤집기로 먹어도 보너스패까지
+    g.hands[B] = [30];
+    g.stock = [11, 41];
+    g.play(B, 30);
+    expect(g.captured[B]).toEqual(expect.arrayContaining([8, 9, 10, 11, 48]));
+  });
+  test('뻑이 아니면 이번 차례 보너스패는 그대로 내 것', () => {
+    const g = mk({ a: [8, 20], b: [11, 30], floor: [9], stock: [48, 24, 40] });
+    g.play(A, 8);
+    expect(g.captured[A]).toEqual(expect.arrayContaining([48, 8, 9]));
+    expect(g.ppeokBonus).toEqual({});
+  });
   test('따닥: 같은 월 4장 + 피 1장', () => {
     const g = mk({ a: [8, 20], b: [30], floor: [10, 11], stock: [9, 40], capB: [2] });
     const r = g.play(A, 8);

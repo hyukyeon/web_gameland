@@ -16,17 +16,21 @@ const spring = { type: 'spring', stiffness: 260, damping: 28, mass: 0.9 };
 
 /**
  * 화투패 한 장. id 가 있으면 layoutId 로 손패→바닥→획득패 이동이 자동으로 날아가는 애니메이션이 된다.
- * back=true 면 뒷면(CSS), 보너스 카드(48/49)는 CSS 로 그린다.
+ * back=true 면 뒷면(CSS), 보너스 카드(48~50)는 CSS 로 그린다.
  */
-export function Card({ id, back = false, size = 'md', onClick, selected, glow, hl, dim, fresh, slam, className = '', style, hotkey }) {
+export function Card({ id, back = false, size = 'md', onClick, selected, glow, hl, dim, fresh, slam, flip, className = '', style, hotkey }) {
   const clickable = !!onClick;
   // slam: 방금 낸/뒤집은 패 — 크게 던져서 탁! 하고 내려앉는다 (살짝 기울었다가 바로잡힘)
-  const initial = slam
-    ? { opacity: 1, scale: 1.45, rotate: fresh ? 0 : -9, y: fresh ? -50 : -10, rotateY: fresh ? 90 : 0 }
-    : fresh
-      ? { opacity: 0, y: -50, scale: 0.6, rotateY: 90 }
-      : { opacity: 0, scale: 0.7 };
-  const transition = slam ? { type: 'spring', stiffness: 380, damping: 15, mass: 0.8 } : spring;
+  // flip: 더미 위에서 그 자리에서 뒤집힌다 (뒤집힌 뒤 layoutId 로 제자리까지 날아감)
+  const initial = flip
+    ? { opacity: 1, scale: 1.12, rotate: 0, y: 0, rotateY: 90 }
+    : slam
+      ? { opacity: 1, scale: 1.45, rotate: fresh ? 0 : -9, y: fresh ? -50 : -10, rotateY: fresh ? 90 : 0 }
+      : fresh
+        ? { opacity: 0, y: -50, scale: 0.6, rotateY: 90 }
+        : { opacity: 0, scale: 0.7 };
+  // 착지(크기·기울기)는 통통 튀게, 자리 이동(layout)은 넘치지 않게 부드럽게
+  const transition = slam ? { type: 'spring', stiffness: 380, damping: 15, mass: 0.8, layout: spring } : spring;
   return (
     <motion.div
       layout
@@ -81,10 +85,11 @@ export function Card({ id, back = false, size = 'md', onClick, selected, glow, h
           <img src={cardImg(id)} alt="" draggable={false} className="h-full w-full object-fill" />
         )}
         {!back && id != null && isBonus(id) && (
-          <div className="flex h-full w-full flex-col items-center justify-center text-center font-black leading-tight text-amber-950">
-            <span className="text-[10px] sm:text-xs">보너스</span>
-            <span className="text-base sm:text-xl">★★</span>
-            <span className="text-[9px] sm:text-[11px]">쌍피</span>
+          // 글자 크기를 카드 폭(cqw)에 맞춰 어느 크기에서도 잘리지 않게, 아주 작으면 ★★ 만
+          <div className="bonus-face">
+            <span className="bonus-label">보너스</span>
+            <span className="bonus-star">★★</span>
+            <span className="bonus-label">쌍피</span>
           </div>
         )}
       </div>

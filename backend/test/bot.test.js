@@ -196,6 +196,38 @@ describe('AI 난이도 · 연습 판돈 · 봇 개성 (#15~#17)', () => {
   });
 });
 
+describe('AI 대전: AI 상대 수', () => {
+  test('고스톱 AI 3명(4인, 1명 쉼)으로 끝까지 · 오목은 1:1 고정 · 범위 밖은 1~최대-1 로 · 공개 현황', async () => {
+    const a = await mk('multi');
+    expect((await emit(a.s, 'room:practice', { level: 'easy', bots: 3 })).ok).toBe(true);
+    await sleep(100);
+    const bots = a.room.players.filter((p) => p.bot);
+    expect(bots).toHaveLength(3);
+    expect(bots.every((p) => p.level === 'easy')).toBe(true);
+    expect(new Set(bots.map((p) => p.username)).size).toBe(3);
+    const sum = await (await fetch(`${base}/api/summary`)).json();
+    expect(sum.online).toBeGreaterThanOrEqual(1);
+    // 4인이라 사람이 쉬는 판이면 봇끼리 지연 없이 바로 끝날 수 있어 '진행 중' 대신 방 수를 본다
+    expect(sum.games.gostop.rooms).toBeGreaterThanOrEqual(1);
+    await playHumans([a]);
+    expect(a.over.result).toBeDefined();
+    await emit(a.s, 'room:leave');
+
+    await emit(a.s, 'room:practice', { game: 'omok', bots: 3 });
+    await sleep(50);
+    expect(a.room.players.filter((p) => p.bot)).toHaveLength(1);
+    await emit(a.s, 'room:leave');
+    await emit(a.s, 'room:practice', { game: 'seotda', bots: 99 });
+    await sleep(50);
+    expect(a.room.players.filter((p) => p.bot)).toHaveLength(3);
+    await emit(a.s, 'room:leave');
+    await emit(a.s, 'room:practice', { game: 'yut', bots: 'x' });
+    await sleep(50);
+    expect(a.room.players.filter((p) => p.bot)).toHaveLength(1);
+    await emit(a.s, 'room:leave');
+  });
+});
+
 describe('유저 2 + AI 1 – 실전 랭크', () => {
   test('유저 머니·전적은 정상 증감, 봇은 면제', async () => {
     const [a, b] = [await mk('rk'), await mk('rk')];

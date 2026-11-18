@@ -45,7 +45,7 @@ test('윷놀이 AI 연습: 던지기 팝업 · 말 이동 · 봇 응수 · 규�
     if (r === 'throw') {
       throws++;
       await expect(page.getByTestId('throw-name').last()).toBeVisible();
-      await expect(page.getByTestId('sticks').last().locator('> div')).toHaveCount(4);
+      await expect(page.getByTestId('sticks').last().getByTestId('stick')).toHaveCount(4);
       sawPopup = true;
     }
     if (r === 'move') moves++;
@@ -59,7 +59,7 @@ test('윷놀이 AI 연습: 던지기 팝업 · 말 이동 · 봇 응수 · 규�
 
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: '나가기' }).click();
-  await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /AI 대전/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

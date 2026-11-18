@@ -1,12 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotionConfig } from 'framer-motion';
 import { useApp } from '../store.jsx';
 import { won, signed } from '../cards.js';
 import { Avatar, BotLevel } from './Avatar.jsx';
 import { Chat } from './Chat.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
 import { SettingsButton } from './Settings.jsx';
-import { EmoteBubble, EmoteButton, OMOK_EMOTES } from './Emote.jsx';
+import { EmoteBubble, EmoteButton } from './Emote.jsx';
 import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { OnceHint } from './Tutorial.jsx';
 import { useShortLandscape, useSettings } from '../settings.js';
@@ -29,12 +29,16 @@ const THEMES = {
   marble: { bg: 'repeating-linear-gradient(115deg,rgba(100,116,139,.10) 0 2px,transparent 2px 14px),linear-gradient(135deg,#f3f4f6,#d1d5db 55%,#e5e7eb)', line: '#4b5563' },
   dark: { bg: 'linear-gradient(135deg,#64748b,#475569 70%)', line: '#e2e8f0' },
 };
-// 돌 스킨
+// 돌 스킨. 전부 radial-gradient '이미지'로 그린다: 모바일 브라우저의 강제 다크 모드는 background-color(단색)는
+// 뒤집거나 흐리게 바꾸지만 background-image 는 건드리지 않아, 단색이면 흑·백돌이 판과 구분되지 않는다.
 const STONES = {
   classic: { 1: 'radial-gradient(circle at 32% 28%,#6b7280,#111827 55%,#000)', 2: 'radial-gradient(circle at 32% 28%,#fff,#e5e7eb 60%,#9ca3af)' },
   glass: { 1: 'radial-gradient(circle at 30% 24%,#d1d5db 0,#374151 16%,#030712 60%,#000)', 2: 'radial-gradient(circle at 30% 24%,#fff 0,#f1f5f9 28%,#cbd5e1 75%,#94a3b8)' },
-  flat: { 1: '#111827', 2: '#f8fafc' },
+  // 단색 스킨도 같은 색을 두 번 준 그라데이션(겉보기엔 단색)
+  flat: { 1: 'radial-gradient(circle,#111827,#111827)', 2: 'radial-gradient(circle,#f8fafc,#f8fafc)' },
 };
+/** 작은 돌 표시(플레이어 칩·위협 배지)용 배경 이미지 */
+const stoneImage = (color) => STONES.classic[color];
 
 /** 교차점 한 칸: 가운데를 지나는 십자선(가장자리 칸은 반 토막)을 배경으로 그린다 */
 function lineBg(x, y, c) {
@@ -57,7 +61,7 @@ function Stone({ color, skin = 'classic', theme = 'wood', ghost = false, fresh =
   return (
     <motion.span
       className={`absolute inset-[9%] flex items-center justify-center rounded-full ${edge} ${win ? '!ring-2 ring-emerald-400' : ''}`}
-      style={{ background: STONES[skin][color], boxShadow: ghost ? 'none' : skin === 'flat' ? '0 1px 1px rgba(0,0,0,.45)' : '0 2px 3px rgba(0,0,0,.55)' }}
+      style={{ backgroundImage: STONES[skin][color], backgroundColor: 'transparent', boxShadow: ghost ? 'none' : skin === 'flat' ? '0 1px 1px rgba(0,0,0,.45)' : '0 2px 3px rgba(0,0,0,.55)' }}
       // 새로 놓인 돌만 위에서 '탁' 떨어지는 느낌으로 (이미 있던 돌은 그대로)
       initial={fresh ? { scale: 1.7, y: -26, opacity: 0 } : false}
       animate={{ scale: 1, y: 0, opacity: ghost ? 0.45 : 1 }}
@@ -84,16 +88,18 @@ function threatMapOf(threats, myColor) {
 
 function threatBadge(t, myColor) {
   const mine = myColor ? t.color === myColor : null;
-  const cls = mine == null ? (t.color === BLACK ? 'bg-slate-900 text-white ring-1 ring-white/70' : 'bg-white text-slate-900 ring-1 ring-black/50') : mine ? 'bg-sky-500 text-white' : 'bg-red-500 text-white';
+  // 흑·백 배지는 돌과 같이 그라데이션 이미지로 (강제 다크에서 색이 뒤집히지 않게)
+  const cls = mine == null ? (t.color === BLACK ? 'text-white ring-1 ring-white/70' : 'text-slate-900 ring-1 ring-black/50') : mine ? 'bg-sky-500 text-white' : 'bg-red-500 text-white';
+  const style = mine == null ? { backgroundImage: stoneImage(t.color) } : undefined;
   const who = mine == null ? colName(t.color) : mine ? '내' : '상대';
   const what = t.kind === 'four' ? '4 (한 수만 더 두면 5목)' : '열린 3';
-  return { cls, label: `${who} ${what}`, text: t.kind === 'four' ? '4' : '3' };
+  return { cls, style, label: `${who} ${what}`, text: t.kind === 'four' ? '4' : '3' };
 }
 
 function Board({ view, myColor, canPlay, onCell, hint, sel, prefs, forbidSet, zoom = 1, readLabel }) {
   const [hover, setHover] = useState(null);
   const refs = useRef({});
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionConfig(); // 앱 애니메이션 설정을 따른다 (useReducedMotion 은 기기 설정만 본다)
   const theme = THEMES[prefs.theme] ?? THEMES.wood;
   const winCells = useMemo(() => new Set((view.result?.line ?? []).map(([x, y]) => `${x},${y}`)), [view.result]);
   const lastKey = view.last ? `${view.last.x},${view.last.y}` : null;
@@ -189,7 +195,7 @@ function Board({ view, myColor, canPlay, onCell, hint, sel, prefs, forbidSet, zo
                   <span className={`pointer-events-none absolute inset-0 flex items-center justify-center text-[clamp(9px,2.8vw,17px)] font-black leading-none ${prefs.theme === 'dark' ? 'text-red-400' : 'text-red-600'}`} aria-hidden="true">✕</span>
                 )}
                 {badge && (
-                  <span className={`pointer-events-none absolute inset-[26%] flex items-center justify-center rounded-full text-[clamp(7px,2vw,11px)] font-black leading-none opacity-90 ${badge.cls}`} title={badge.label} aria-hidden="true">{badge.text}</span>
+                  <span className={`pointer-events-none absolute inset-[26%] flex items-center justify-center rounded-full text-[clamp(7px,2vw,11px)] font-black leading-none opacity-90 ${badge.cls}`} style={badge.style} title={badge.label} aria-hidden="true">{badge.text}</span>
                 )}
                 {hint && hint.x === x && hint.y === y && c === 0 && (
                   <motion.span className="pointer-events-none absolute inset-[6%] rounded-full ring-4 ring-sky-400" animate={{ scale: [1, 1.25, 1], opacity: [1, 0.55, 1] }} transition={{ repeat: Infinity, duration: 1.1 }} aria-hidden="true" />
@@ -227,7 +233,7 @@ function PlayerStrip({ pid, color, playerOf, nameOf, isTurn, left, auto, win, yo
           <BotLevel player={p} />
         </div>
         <div className="flex items-center gap-1 text-[11px] text-slate-300">
-          <span className={`inline-block h-3 w-3 rounded-full ring-1 ring-white/40 ${color === BLACK ? 'bg-black' : 'bg-white'}`} aria-hidden="true" />
+          <span className="inline-block h-3 w-3 rounded-full ring-1 ring-white/40" style={{ backgroundImage: stoneImage(color) }} aria-hidden="true" />
           {colName(color)} {color === BLACK && '· 선공'}
         </div>
       </div>
@@ -299,7 +305,7 @@ function Confetti() {
 }
 
 function ResultModal({ over, view, nameOf, you, onClose, onRematch, emit, skillNote }) {
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionConfig(); // 앱 애니메이션 설정을 따른다 (useReducedMotion 은 기기 설정만 본다)
   const res = over.result;
   const d = over.payout?.delta?.[you] ?? 0;
   const draw = res.winner == null;
@@ -580,7 +586,7 @@ export function OmokBoard() {
       </div>
 
       <div className="relative z-[59] flex min-h-[40px] flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-xl bg-black/45 p-1.5 text-sm">
-        {!spectator && <EmoteButton list={OMOK_EMOTES} />}
+        {!spectator && <EmoteButton game="omok" />}
         {!spectator && playing && (
           <>
             <button className="btn btn-ghost whitespace-nowrap !px-3 !py-1 text-sm" disabled={myMoves === 0 || undoAsking || pending} onClick={askUndo} title="내 마지막 수를 무릅니다 (연습 3번 · 실전은 상대가 수락해야 해요)" {...hk('u')}>

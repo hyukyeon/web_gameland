@@ -12,6 +12,7 @@ import { PICS_DIR, FRONTEND_DIST, UPLOAD_DIR } from './config.js';
 
 export function createServer() {
   const app = express();
+  let io = null;
   // 리버스 프록시(nginx 등) 뒤에서 돌릴 때 실제 클라이언트 IP 로 레이트 리밋하려면 TRUST_PROXY=1
   if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
   app.use(cors());
@@ -25,6 +26,8 @@ export function createServer() {
   app.use('/api/slot', slotRouter);
   app.use('/api/sudoku', sudokuRouter);
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  // 첫 화면 현황 (소켓 서버가 붙은 뒤에 채워진다)
+  app.get('/api/summary', (_req, res) => res.json(io?.summary?.() ?? { online: 0, games: {} }));
   app.get('/api/metrics/omok', (_req, res) => res.json(omokMetrics()));
 
   // 프론트엔드 빌드가 있으면 함께 서빙
@@ -47,6 +50,6 @@ export function createServer() {
   });
 
   const server = http.createServer(app);
-  const io = attachSockets(server, '*');
+  io = attachSockets(server, '*');
   return { app, server, io };
 }

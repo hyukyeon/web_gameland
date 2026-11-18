@@ -6,15 +6,21 @@ import App from './App.jsx';
 import { AppProvider } from './store.jsx';
 import { installHotkeys } from './keys.js';
 import { registerServiceWorker } from './pwa.js';
+import { useSettings, reducedMotionOf } from './settings.js';
 
 installHotkeys();
 registerServiceWorker();
 
-createRoot(document.getElementById('root')).render(
-  // 운영체제의 '동작 줄이기' 설정을 따르면 큰 이동 애니메이션을 생략한다 (#26)
-  <MotionConfig reducedMotion="user">
-    <AppProvider>
-      <App />
-    </AppProvider>
-  </MotionConfig>,
-);
+// 애니메이션 설정: 켜기(기본) · 기기 설정('동작 줄이기'면 큰 이동 생략, #26) · 끄기
+function Root() {
+  const { motion } = useSettings();
+  return (
+    <MotionConfig reducedMotion={reducedMotionOf(motion)}>
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </MotionConfig>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<Root />);

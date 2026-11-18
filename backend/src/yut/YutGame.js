@@ -76,7 +76,9 @@ export class YutGame {
     if (piece.pos === DONE) return null;
     const n = THROWS[kind].n;
     if (n < 0) {
-      if (piece.trail.length < 2) return null; // 대기 중이거나 도(1)에서는 뒤로 갈 곳이 없다
+      if (piece.pos === WAIT) return null; // 아직 안 나온 말은 뒤로 갈 곳이 없다
+      // 도(1)에서 빽도: 참먹이(0)로 간다 — 판 위에 남고, 거기서 한 칸이라도 더 가야 나간다
+      if (piece.trail.length < 2) return piece.pos === 1 ? { path: [0], back: true } : null;
       return { path: [piece.trail[piece.trail.length - 2]], back: true };
     }
     return { path: forward(piece.pos, piece.trail, n), back: false };

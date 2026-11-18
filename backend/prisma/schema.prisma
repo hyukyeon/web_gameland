@@ -66,6 +66,7 @@ model User {
   // 스도쿠 일일 보상(KST 자정 기준 초기화): 오늘 보상을 받은 클리어 횟수와 마지막 클리어 시각
   dailySudokuCleared  Int       @default(0)
   lastSudokuClearedAt DateTime?
+  sudokuSave          String? // 풀던 스도쿠 판 JSON {id,difficulty,puzzle,board,elapsed,issuedAt} — 저장하고 나가기·서버 재시작 후 이어 풀기
   createdAt    DateTime     @default(now())
   results      GameResult[]
 }

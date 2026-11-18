@@ -31,6 +31,9 @@ export function Room() {
   const seotda = room.game === 'seotda';
   const omok = room.game === 'omok';
   const yut = room.game === 'yut';
+  const vegas = room.game === 'vegas';
+  const yacht = room.game === 'yacht';
+  const janggi = room.game === 'janggi';
   const allReady = room.players.length >= 2 && room.players.every((p) => p.ready);
   // 방장: 나머지가 모두 준비됐으면 내 '준비' 가 곧 시작이므로 '시작하기' 로 보여준다
   const othersReady = room.players.length >= 2 && room.players.every((p) => p.id === user.id || p.ready);
@@ -42,7 +45,7 @@ export function Room() {
         <div>
           <h1 className="text-lg font-black text-gold-400">{room.name}</h1>
           <p className="text-xs text-slate-300">
-            판돈 {won(room.bet)} · {room.players.length}/{room.max}명 {omok ? '(1:1)' : '(2~4인)'} {!omok && !yut && room.players.length === 3 && '· 3인 맞고'}
+            판돈 {won(room.bet)} · {room.players.length}/{room.max}명 {omok || janggi ? '(1:1)' : `(2~${room.max}인)`} {!omok && !yut && !vegas && !yacht && !janggi && room.players.length === 3 && '· 3인 맞고'}
             {' · '}
             {room.ranked ? '실전 (머니·전적 반영)' : '연습 (머니·전적 무반영)'}
           </p>
@@ -121,7 +124,13 @@ export function Room() {
             </div>
           )}
 
-          {yut ? (
+          {janggi ? (
+            <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">♟️ 장기 · 참가비 {won(room.bet)}원 · 1:1. 첫 판은 방장이 초(楚, 먼저 둠), 다음 판부터 번갈아요. 시작하면 각자 상차림(마·상 위치)을 고르고, 상대 궁을 외통으로 몰면 승리! 빅장·한수 쉼 연속·200수가 되면 남은 말 점수로 판정해요(한 덤 1.5). 진 사람이 이긴 사람에게 참가비를 내요.</p>
+          ) : yacht ? (
+            <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">🎯 요트 다이스 · 참가비 {won(room.bet)}원 · 2~4인. 차례마다 주사위 5개를 세 번까지 굴릴 수 있고, 굴린 뒤엔 남길 주사위를 눌러 고정한 채 나머지만 다시 굴려요. 그다음 점수표의 빈 칸 하나에 기록! 12칸을 다 채우면 끝나고, 위쪽 칸 합이 63점 이상이면 보너스 35점. 점수가 가장 높은 사람이 나머지의 참가비를 받아요.</p>
+          ) : vegas ? (
+            <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">💵 라스베가스 · 참가비 {won(room.bet)}원 · 2~5인. 4라운드 동안 주사위 8개를 굴려, 나온 눈 하나를 골라 그 눈의 주사위를 전부 같은 번호 카지노에 놓아요. 카지노마다 주사위가 가장 많은 사람이 가장 큰 지폐를 가져가지만, <b>같은 개수끼리는 모두 취소!</b> 2~3인이면 흰(중립) 주사위도 함께 굴려요. 4라운드 뒤 돈이 가장 많은 사람이 나머지의 참가비를 받아요.</p>
+          ) : yut ? (
             <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">🎲 윷놀이 · 참가비 {won(room.bet)}원. 방 순서대로 청🔵·홍🔴 팀이 번갈아 들어가요(2명이면 1:1, 4명이면 2:2). 팀마다 말 4개를 먼저 모두 도착시키면 승리! 윷·모가 나오거나 상대 말을 잡으면 한 번 더 던져요. 진 팀이 이긴 팀에게 참가비를 내요. 우측 상단 ❓에서 규칙을 볼 수 있어요.</p>
           ) : omok ? (
             <p className="rounded-lg bg-white/5 p-3 text-xs text-slate-300">⚪⚫ 오목 · 참가비 {won(room.bet)}원. 15×15 판에서 먼저 5개를 잇는 사람이 이겨요. 첫 판은 무작위로 흑(선공)이 정해지고, 다음 판은 진 사람이 흑을 잡습니다. 흑은 쌍삼(3-3)·장목(6목 이상)이 금지! 우측 상단 ❓에서 규칙을 볼 수 있어요.</p>

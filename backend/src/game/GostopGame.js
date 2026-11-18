@@ -11,7 +11,7 @@ export const GWANG_SALE_PTS_PER_GWANG = 2; // 광팔기: 광 1장당 2점 (선�
  * - 광팔기: 3인/4인에서 첫 패에 광이 3장 이상이면 광을 팔 수 있다.
  *   판 패는 더미에 섞인다. 4인이면 쉬던 사람이 새로 7장을 받아 대신 치고, 3인이면 2인전이 된다.
  *   판 사람은 치지 않고, (선과 인수자를 뺀) 플레이어 각자에게 광 1장당 2점 × 판돈을 받는다.
- * - 옵션 bonus: 보너스 쌍피 2장을 덱에 추가
+ * - 옵션 bonus: 보너스 쌍피 3장(48~50)을 덱에 추가
  * - 옵션 ppeokPay: 뻑 칩(첫뻑 3점, 연뻑 6점, 삼연뻑 = 즉시 종료)을 각 상대에게서 받는다
  * - 옵션 ttibak: 승자의 띠가 5장 이상이면 띠박(×2)
  * - 옵션 chongtong: 첫 패에 같은 월 4장(총통)이면 즉시 종료(3점) 선언 가능, 계속해 이기면 ×4. (끄면 다시 섞음)
@@ -99,6 +99,8 @@ export class GostopGame {
     this.dummies = per(() => 0);
     this.ppeok = per(() => 0);
     this.ppeokPiles = {}; // month -> 뻑 낸 사람
+    this.ppeokBonus = {}; // month -> 그 뻑 더미에 같이 깔린 보너스패 (뻑 더미를 먹는 사람이 함께 가져간다)
+    this.turnBonus = []; // 이번 차례에 얻은 보너스패 (뻑이 나면 뻑 더미에 같이 남는다)
     this.dead = [];
     this.ppeokStreak = per(() => 0);
     this.ppeokMax = per(() => 0); // 판 중 최대 연속 뻑
@@ -214,6 +216,7 @@ export class GostopGame {
       dummies: this.dummies,
       ppeok: this.ppeok,
       ppeokPiles: this.ppeokPiles,
+      ppeokBonus: this.ppeokBonus,
       drawn: this.drawn,
       played: this.played,
       actor: this.actor,
@@ -262,6 +265,7 @@ export class GostopGame {
       dummies: s.dummies,
       ppeok: s.ppeok,
       ppeokPiles: s.ppeokPiles,
+      ppeokBonus: s.ppeokBonus,
       drawn: s.drawn,
       played: s.played,
       actor: s.actor,
@@ -334,12 +338,14 @@ export class GostopGame {
     });
   }
 
-  /** 뻑 더미를 먹었을 때의 피 갈취량(상대 한 명당) */
+  /** 뻑 더미를 먹었을 때의 피 갈취량(상대 한 명당)과 더미에 같이 깔려 있던 보너스패 */
   ppeokEatSteal(pid, month) {
     const owner = this.ppeokPiles[month];
-    if (owner === undefined) return { n: 0, text: null };
+    if (owner === undefined) return { n: 0, text: null, bonus: [] };
     delete this.ppeokPiles[month];
-    return owner === pid ? { n: 2, text: '자뻑!' } : { n: 1, text: '뻑 먹기!' };
+    const bonus = this.ppeokBonus[month] ?? [];
+    delete this.ppeokBonus[month];
+    return owner === pid ? { n: 2, text: '자뻑!', bonus } : { n: 1, text: '뻑 먹기!', bonus };
   }
 
   isExhausted() {
@@ -468,6 +474,7 @@ export class GostopGame {
       // 보너스패: 즉시 획득하고 더미에서 한 장을 손으로 받아 같은 턴을 이어간다
       this.hands[pid] = hand.filter((id) => id !== cardId);
       this.captured[pid].push(cardId);
+      this.turnBonus.push(cardId);
       this.played = cardId;
       this.snap({ text: '보너스!', kind: 'bonus', pid });
       if (this.stock.length) {
@@ -533,7 +540,7 @@ export class GostopGame {
       this.insertNear(cardId);
       this.snap();
       const eat = this.ppeokEatSteal(pid, M);
-      this.takeCards(pid, [cardId, ...floorM]);
+      this.takeCards(pid, [cardId, ...floorM, ...eat.bonus]);
       if (eat.n) this.stealPi(pid, eat.n);
       this.snap(eat.text ? { text: eat.text, kind: 'special', pid } : null);
     }
@@ -572,6 +579,7 @@ export class GostopGame {
     // 더미에서 보너스패가 나오면 획득하고 한 장 더 뒤집는다
     while (card(S).kind === 'bonus') {
       this.captured[pid].push(S);
+      this.turnBonus.push(S);
       this.drawn = S;
       this.snap({ text: '보너스!', kind: 'bonus', pid });
       if (this.stock.length === 0) return this.finishTurn(ctx.hPair || [], null);
@@ -595,6 +603,16 @@ export class GostopGame {
       this.ppeokMax[pid] = Math.max(this.ppeokMax[pid], this.ppeokStreak[pid]);
       ctx.ppeokNow = true;
       ctx.hPair = null;
+      // 이번 차례에 얻은 보너스패도 획득하지 못하고 뻑 더미에 같이 남는다
+      if (this.turnBonus.length) {
+        this.captured[pid] = this.captured[pid].filter((id) => !this.turnBonus.includes(id));
+        for (const b of this.turnBonus) {
+          const i = this.floor.lastIndexOf(S);
+          this.floor.splice(i + 1, 0, b);
+        }
+        this.ppeokBonus[Ms] = [...(this.ppeokBonus[Ms] ?? []), ...this.turnBonus];
+        this.turnBonus = [];
+      }
       this.snap({ text: this.ppeokStreak[pid] >= 3 ? '삼연뻑!' : this.ppeokStreak[pid] === 2 ? '연뻑!' : '뻑!', kind: 'ppeok', pid });
       return this.finishTurn([], null);
     }
@@ -617,7 +635,7 @@ export class GostopGame {
     }
     // 3장: 뻑 더미 먹기
     const eat = this.ppeokEatSteal(pid, Ms);
-    return this.captureDraw([S, ...cand], eat.n ? { text: eat.text, kind: 'special', steal: eat.n } : null);
+    return this.captureDraw([S, ...cand, ...eat.bonus], eat.n ? { text: eat.text, kind: 'special', steal: eat.n } : null);
   }
 
   captureDraw(ids, special) {
@@ -627,6 +645,7 @@ export class GostopGame {
   // ---------- 턴 마무리 ----------
   finishTurn(captureIds, special) {
     const pid = this.ctx.actor;
+    this.turnBonus = [];
     if (!this.ctx.ppeokNow) this.ppeokStreak[pid] = 0;
     else if (this.opt.ppeokPay) {
       const streak = this.ppeokStreak[pid];

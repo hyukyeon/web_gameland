@@ -135,6 +135,15 @@ const SOUNDS = {
     tone(392, 0.7, { type: 'sine', vol: 0.15 });
     noise(0.05, { vol: 0.3, freq: 800 });
   },
+  // 주사위 굴리기 (요트 다이스): 손 안에서 달그락 → 휙 던짐 → 판에 떨어져 딱딱 튀고 멈춤 (화면 연출 1초와 맞춤)
+  diceRoll() {
+    for (let i = 0; i < 9; i++) noise(0.03, { vol: 0.3, freq: 2600 + (i % 3) * 900, at: i * 0.036, q: 3 });
+    noise(0.2, { vol: 0.12, freq: 700, slide: 3200, at: 0.33, q: 0.7 });
+    for (const [at, v] of [[0.74, 0.55], [0.78, 0.4], [0.86, 0.32], [0.92, 0.22], [0.99, 0.14]]) {
+      noise(0.035, { vol: v, freq: 3300, q: 1.6, at });
+      tone(430, 0.05, { type: 'triangle', vol: v * 0.6, at, slide: 250 });
+    }
+  },
   shake() {
     for (let i = 0; i < 8; i++) noise(0.04, { vol: 0.25, freq: 4000 + (i % 2) * 1500, at: i * 0.05, q: 2 });
   },

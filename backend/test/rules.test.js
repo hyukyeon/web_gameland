@@ -223,7 +223,7 @@ describe('옵션 조합 무작위 불변식', () => {
   test.each(Array.from({ length: 150 }, (_, i) => i + 1))('3인 전체옵션 seed %i', (seed) => {
     const rnd = seeded(seed * 7727);
     const g = new GostopGame([A, B, C], { rnd, ...opts });
-    const total = 50;
+    const total = 51; // 48장 + 보너스 3장
     for (let step = 0; step < 600 && g.phase !== 'ended'; step++) {
       const p = g.turn;
       let r;

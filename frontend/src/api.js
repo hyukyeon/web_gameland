@@ -26,6 +26,7 @@ export const api = {
   slotSpin: (token) => call('/slot/spin', { method: 'POST', token, base: '/api' }),
   sudokuStatus: (token) => call('/sudoku/status', { token, base: '/api' }),
   sudokuNew: (token, difficulty) => call('/sudoku/new', { method: 'POST', token, base: '/api', body: { difficulty } }),
+  sudokuSave: (token, id, board, elapsed) => call('/sudoku/save', { method: 'POST', token, base: '/api', body: { id, board, elapsed } }),
   sudokuSubmit: (token, id, board) => call('/sudoku/submit', { method: 'POST', token, base: '/api', body: { id, board } }),
   updateProfile: (token, nickname) => call('/profile', { method: 'PUT', token, body: { nickname } }),
   uploadAvatar: upload,
@@ -35,4 +36,5 @@ export const api = {
   me: (token) => call('/me', { token }),
   records: (token) => call('/records', { token }),
   ranking: (game = 'money') => call(`/ranking?game=${game}`),
+  summary: () => call('/summary', { base: '/api' }), // 첫 화면 현황 (로그인 불필요)
 };

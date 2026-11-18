@@ -1,12 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotionConfig } from 'framer-motion';
 import { useApp } from '../store.jsx';
 import { won, signed } from '../cards.js';
 import { Avatar, BotLevel } from './Avatar.jsx';
 import { Chat } from './Chat.jsx';
 import { SoundToggle } from './SoundToggle.jsx';
 import { SettingsButton } from './Settings.jsx';
-import { EmoteBubble, EmoteButton, YUT_EMOTES } from './Emote.jsx';
+import { EmoteBubble, EmoteButton } from './Emote.jsx';
 import { AutoToggle, TurnTimer, useCountdown } from './TurnTools.jsx';
 import { hk } from '../keys.js';
 import { sfx } from '../sound.js';
@@ -14,28 +14,75 @@ import { WAIT, DONE, XY, LINES, CORNERS, TEAM, THROW_NAME, THROW_STEPS } from '.
 
 const HOP_MS = 260; // 한 칸 '통' 뛰는 시간
 
-/** 윷가락 4개: 튀어올라 회전하다가 앞(평면)/뒤(곡면) 으로 떨어진다 */
+// 던질 때마다 가락이 떨어지는 자리·각도를 다르게 (같은 던지기는 다시 그려도 같은 자리)
+const jitter = (seed, i, k) => {
+  const x = Math.sin((seed + 1) * 12.9898 + i * 78.233 + k * 37.719) * 43758.5453;
+  return x - Math.floor(x); // 0~1
+};
+const STICK_MS = 1450; // 손에서 떠나 멍석에 멈출 때까지
+
+/**
+ * 윷가락 4개 던지기: 손에 모아 흔들기 → 위로 던져 흩어지며 공중제비 → 멍석에 떨어져 통 튀고 → 데굴 굴러 멈춤.
+ * 앞(평면, 밝은 나무)/뒤(곡면, 어두운 껍질)는 마지막 rotateX 로 정해진다. 그림자는 높이 뜰수록 작고 옅어진다.
+ */
 function Sticks({ throwInfo, reduce }) {
   const sticks = throwInfo.sticks?.length === 4 ? throwInfo.sticks : [true, false, true, false];
+  const seed = throwInfo.seq ?? 0;
   return (
-    <div className="flex items-end gap-3" style={{ perspective: 700 }} aria-hidden="true" data-testid="sticks">
-      {sticks.map((flat, i) => (
-        <motion.div
-          key={i}
-          className="relative h-28 w-6"
-          style={{ transformStyle: 'preserve-3d' }}
-          initial={{ y: 0, rotateX: 0, rotateZ: (i - 1.5) * 10, scale: 0.9 }}
-          animate={reduce ? { y: 0, rotateX: flat ? 0 : 180 } : { y: [0, -190 - i * 14, 0, -26, 0], rotateX: [0, 540 + i * 90, 720 + i * 90 + (flat ? 0 : 180)], scale: [0.9, 1.15, 1] }}
-          transition={reduce ? { duration: 0 } : { duration: 1.05, delay: i * 0.05, times: [0, 0.45, 0.75, 0.88, 1], ease: 'easeOut', rotateX: { duration: 0.95, ease: 'easeOut' } }}
-        >
-          {/* 앞면: 평면(밝은 나무, 결 무늬) / 뒷면: 곡면(어두운 껍질). 빽도 가락(0번)은 평면에 표시 */}
-          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-200 via-amber-100 to-amber-300 shadow-lg ring-1 ring-amber-700/60" style={{ backfaceVisibility: 'hidden' }}>
-            {i === 0 && <span className="absolute left-1/2 top-3 -translate-x-1/2 text-[10px] font-black text-red-600">빽</span>}
-            <span className="absolute inset-x-1 top-1/2 h-px bg-amber-800/40" />
-          </div>
-          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-900 via-amber-800 to-amber-950 shadow-lg ring-1 ring-black/60" style={{ backfaceVisibility: 'hidden', transform: 'rotateX(180deg)' }} />
-        </motion.div>
-      ))}
+    <div className="relative h-[230px] w-[min(340px,88vw)]" style={{ perspective: 800 }} aria-hidden="true" data-testid="sticks">
+      {/* 멍석 */}
+      <div className="absolute inset-x-0 bottom-0 h-[150px] rounded-[50%] bg-[repeating-linear-gradient(90deg,#c08a3e_0_6px,#a8732c_6px_12px)] shadow-[inset_0_0_30px_rgba(0,0,0,.45),0_10px_30px_rgba(0,0,0,.5)] ring-4 ring-amber-900/70" />
+      {sticks.map((flat, i) => {
+        const fx = (i - 1.5) * 62 + (jitter(seed, i, 1) - 0.5) * 36; // 멈춘 자리 (가운데 기준 px)
+        const fy = (jitter(seed, i, 2) - 0.5) * 34;
+        const rz = (jitter(seed, i, 3) - 0.5) * 80; // 멈춘 각도
+        const roll = (jitter(seed, i, 4) - 0.5) * 50; // 떨어진 뒤 굴러 가는 거리
+        const spin = 2 + Math.floor(jitter(seed, i, 5) * 2); // 공중제비 바퀴 수
+        const rx = 360 * spin + (flat ? 0 : 180);
+        const land = { x: fx - roll, y: fy };
+        return (
+          <React.Fragment key={i}>
+            {/* 그림자 */}
+            <motion.div
+              className="absolute bottom-[68px] left-1/2 h-4 w-20 -translate-x-1/2 rounded-[50%] bg-black/45 blur-[3px]"
+              initial={reduce ? false : { x: 0, y: 60, rotate: 90, scale: 0.6, opacity: 0.5 }}
+              animate={reduce ? { x: fx, y: fy, rotate: rz + 90, opacity: 1 } : { x: [0, 0, fx * 0.6, land.x, land.x, fx], y: [60, 60, fy, fy, fy, fy], rotate: [90, 90, 90 + rz, 90 + rz, 90 + rz, 90 + rz], scale: [0.6, 0.6, 0.25, 1, 0.75, 1], opacity: [0.5, 0.5, 0.15, 0.9, 0.7, 0.9] }}
+              transition={reduce ? { duration: 0 } : { duration: STICK_MS / 1000, times: [0, 0.16, 0.5, 0.7, 0.8, 1], ease: 'easeOut' }}
+            />
+            <motion.div
+              data-testid="stick"
+              className="absolute bottom-[40px] left-1/2 -ml-[11px] h-[92px] w-[22px]"
+              style={{ transformStyle: 'preserve-3d' }}
+              // 시작값을 꼭 준다 (initial=false 면 마지막 키프레임으로 바로 가 버려 움직이지 않는다)
+              initial={reduce ? false : { x: (i - 1.5) * 7, y: 70, rotateZ: (i - 1.5) * 6, rotateX: 0, scale: 0.8 }}
+              animate={
+                reduce
+                  ? { x: fx, y: fy, rotateZ: rz, rotateX: flat ? 0 : 180 }
+                  : {
+                      // 손에 모음 → 흔들기 → 던져 올림 → 착지 → 통 튐 → 착지 → 굴러 멈춤
+                      x: [(i - 1.5) * 7, (i - 1.5) * 7 + (i % 2 ? 4 : -4), fx * 0.6, land.x, land.x + roll * 0.2, land.x + roll * 0.4, fx],
+                      y: [70, 64, -150 - i * 12, fy, fy - 26, fy, fy],
+                      rotateZ: [(i - 1.5) * 6, (i - 1.5) * 6 - 8, rz * 0.4 + 180, rz + 360, rz + 360, rz + 360, rz + 360],
+                      rotateX: [0, 0, rx * 0.55, rx, rx, rx, rx],
+                      scale: [0.8, 0.82, 1.25, 1, 1.04, 1, 1],
+                    }
+              }
+              transition={reduce ? { duration: 0 } : { duration: STICK_MS / 1000, delay: i * 0.03, times: [0, 0.16, 0.5, 0.7, 0.78, 0.86, 1], ease: ['easeInOut', 'easeOut', 'easeIn', 'easeOut', 'easeIn', 'easeOut'] }}
+            >
+              {/* 앞면: 평면(밝은 나무, 결 무늬) / 뒷면: 곡면(어두운 껍질). 빽도 가락(0번)은 평면에 표시 */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-200 via-amber-50 to-amber-300 shadow-lg ring-1 ring-amber-700/60" style={{ backfaceVisibility: 'hidden' }}>
+                {i === 0 && <span className="absolute left-1/2 top-2.5 -translate-x-1/2 text-[10px] font-black text-red-600">빽</span>}
+                <span className="absolute inset-x-1 top-1/3 h-px bg-amber-800/40" />
+                <span className="absolute inset-x-1 top-2/3 h-px bg-amber-800/40" />
+              </div>
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-900 via-amber-700 to-amber-950 shadow-lg ring-1 ring-black/60" style={{ backfaceVisibility: 'hidden', transform: 'rotateX(180deg)' }}>
+                <span className="absolute inset-x-1.5 top-1/4 h-1 rounded-full bg-black/25" />
+                <span className="absolute inset-x-1.5 top-3/4 h-1 rounded-full bg-black/25" />
+              </div>
+            </motion.div>
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -43,7 +90,7 @@ function Sticks({ throwInfo, reduce }) {
 /** 던진 결과 팝업: 가락이 다 떨어진 뒤 결과 글자 */
 function ThrowPopup({ throwInfo, nameOf, reduce, onDone }) {
   useEffect(() => {
-    const t = setTimeout(onDone, reduce ? 900 : 1700);
+    const t = setTimeout(onDone, reduce ? 900 : STICK_MS + 650);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [throwInfo.seq]);
@@ -56,7 +103,7 @@ function ThrowPopup({ throwInfo, nameOf, reduce, onDone }) {
         className={`rounded-2xl px-6 py-2 font-black text-felt-900 shadow-2xl ${big ? 'bg-gradient-to-b from-yellow-200 to-amber-500 text-5xl' : 'bg-white text-4xl'}`}
         initial={{ scale: 0, rotate: -8, opacity: 0 }}
         animate={{ scale: 1, rotate: 0, opacity: 1 }}
-        transition={{ delay: reduce ? 0 : 1.0, type: 'spring', stiffness: 360, damping: 13 }}
+        transition={{ delay: reduce ? 0 : STICK_MS / 1000 - 0.1, type: 'spring', stiffness: 360, damping: 13 }}
         data-testid="throw-name"
       >
         {THROW_NAME[throwInfo.kind]}!
@@ -68,9 +115,9 @@ function ThrowPopup({ throwInfo, nameOf, reduce, onDone }) {
 const nodeKind = (n) => (CORNERS.has(n) ? 'corner' : 'dot');
 
 /** 윷판: 선·칸·말. shown = 화면에 보이는 말 위치(이동 연출 중에는 한 칸씩 갱신) */
-function Board({ view, shown, selectable, selected, onPick, targets, onTarget, reduce }) {
+function Board({ view, shown, selectable, selected, onPick, targets, targetExit, onTarget, reduce }) {
   const nodes = useMemo(() => Array.from({ length: 29 }, (_, i) => i), []);
-  // 칸별로 같은 팀 말을 묶어 보여 준다 (업기 → ×n 배지)
+  // 칸별로 같은 팀 말을 묶어 보여 준다 (업기 → 쌓아 올린 말 + ×n 배지)
   const stacks = useMemo(() => {
     const by = {};
     for (const p of view.pieces) {
@@ -98,12 +145,18 @@ function Board({ view, shown, selectable, selected, onPick, targets, onTarget, r
             tabIndex={isTarget ? 0 : -1}
             disabled={!isTarget}
             onClick={() => onTarget(n)}
-            aria-label={isTarget ? `${n === 0 ? '도착' : `${n}번 칸`}으로 이동` : undefined}
+            aria-label={isTarget ? (n === 0 && targetExit ? '도착(말이 나감)' : n === 0 ? '참먹이(출발점)로 이동' : `${n}번 칸으로 이동`) : undefined}
             data-node={n}
             className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition ${k === 'corner' ? 'h-[7.5%] w-[7.5%] border-2 border-amber-900 bg-amber-100' : 'h-[4.6%] w-[4.6%] border border-amber-900 bg-amber-700/70'} ${isTarget ? 'z-20 animate-pulse !bg-emerald-300 ring-4 ring-emerald-500' : ''}`}
             style={{ left: `${x}%`, top: `${y}%` }}
           >
             {n === 0 && <span className="absolute inset-0 grid place-items-center text-[9px] font-black text-amber-900">출발</span>}
+            {/* 참먹이를 넘어 나가는 이동이면 '나가기' 표시 (0 에 멈추는 이동과 구분) */}
+            {isTarget && n === 0 && (
+              <span className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1.5 text-[10px] font-black leading-5 text-white shadow ${targetExit ? 'bg-emerald-600' : 'bg-amber-700'}`}>
+                {targetExit ? '나가기 ↗' : '참먹이'}
+              </span>
+            )}
           </button>
         );
       })}
@@ -135,15 +188,33 @@ function Token({ node, team, ids, selectable, selected, onPick, reduce }) {
       className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 ${can ? 'cursor-pointer' : 'cursor-default'}`}
       style={{ width: '8.6%', height: '8.6%' }}
     >
-      <motion.span
-        key={node}
-        className={`relative grid h-full w-full place-items-center rounded-full text-xs font-black text-white shadow-lg ring-2 ${selected ? 'ring-4 !ring-yellow-300' : ''} ${can && !selected ? 'animate-pulse' : ''}`}
-        style={{ background: `radial-gradient(circle at 35% 30%, ${t.ring}, ${t.fill} 60%)`, boxShadow: '0 3px 6px rgba(0,0,0,.45)', '--tw-ring-color': t.ring }}
-        animate={reduce ? {} : { y: [0, -12, 0] }}
-        transition={{ duration: HOP_MS / 1000, ease: 'easeOut' }}
-      >
-        {ids.length > 1 ? `×${ids.length}` : ''}
-        {ids.length > 1 && <span className="absolute -right-1 -top-1 rounded-full bg-black px-1 text-[10px] leading-4 ring-1 ring-white/60">x{ids.length}</span>}
+      {/* 업힌 말: 말을 겹겹이 쌓아 올린 모양 + 개수 배지 (맨 위 말만 튄다) */}
+      <motion.span key={node} className="relative block h-full w-full" animate={reduce ? {} : { y: [0, -12, 0] }} transition={{ duration: HOP_MS / 1000, ease: 'easeOut' }}>
+        {ids.map((id, k) => {
+          const top = k === ids.length - 1;
+          return (
+            <span
+              key={id}
+              data-testid="stack-piece"
+              className={`absolute inset-0 rounded-full ring-2 ${top && selected ? 'ring-4 !ring-yellow-300' : ''} ${top && can && !selected ? 'animate-pulse' : ''}`}
+              style={{
+                transform: `translateY(${-k * 34}%) scale(${1 - k * 0.05})`,
+                zIndex: k,
+                background: `radial-gradient(circle at 35% 30%, ${t.ring}, ${t.fill} 60%)`,
+                // 아래 말 위에 얹힌 느낌: 아래쪽 두께(진한 테) + 그림자
+                boxShadow: `0 ${k ? 3 : 4}px 0 ${t.fill}, 0 ${k ? 5 : 7}px 8px rgba(0,0,0,.5)`,
+                '--tw-ring-color': t.ring,
+              }}
+            >
+              {top && <span className="absolute inset-[22%] rounded-full border-2 border-white/45" />}
+            </span>
+          );
+        })}
+        {ids.length > 1 && (
+          <span className="absolute -right-2 z-10 rounded-full bg-black px-1 text-[10px] font-black leading-4 text-white ring-1 ring-white/70" style={{ top: `${-(ids.length - 1) * 34 - 8}%` }}>
+            ×{ids.length}
+          </span>
+        )}
       </motion.span>
     </motion.button>
   );
@@ -204,12 +275,12 @@ function Rules({ onClose }) {
         <h2 className="text-lg font-black text-gold-400">🎲 윷놀이 규칙</h2>
         <ul className="list-disc space-y-1.5 pl-5 text-slate-200">
           <li>청🔵·홍🔴 두 팀이 번갈아 윷을 던져요. 팀마다 말은 4개, <b>말 4개를 먼저 모두 도착</b>시키면 승리!</li>
-          <li><b>도 1칸 · 개 2칸 · 걸 3칸 · 윷 4칸 · 모 5칸</b>, 빽도는 한 칸 뒤로 (출발 직후의 말과 아직 안 나온 말은 못 움직여요).</li>
+          <li><b>도 1칸 · 개 2칸 · 걸 3칸 · 윷 4칸 · 모 5칸</b>, 빽도는 한 칸 뒤로 — <b>도 자리에서 빽도가 나오면 참먹이(출발점)</b>로 가요(아직 안 나온 말은 못 움직여요).</li>
           <li><b>윷·모</b>가 나오거나 <b>상대 말을 잡으면</b> 한 번 더 던져요. 던진 결과는 쌓였다가 원하는 말에 나눠 쓸 수 있어요.</li>
           <li><b>잡기</b>: 상대 말이 있는 칸에 <u>멈추면</u> 그 말은 처음으로 돌아가요(업힌 말도 함께).</li>
           <li><b>업기</b>: 내 말이 있는 칸에 멈추면 한 덩어리(×2, ×3…)가 되어 같이 움직여요. 최대 4개.</li>
           <li><b>지름길</b>: 모서리(우상단·좌상단)나 중앙(방)에서 <u>출발</u>하면 대각선으로 가요. 지나치기만 하면 바깥 길 그대로예요.</li>
-          <li>도착점을 넘어서면 도착! 2:2일 땐 같은 팀 두 사람이 번갈아 던져요.</li>
+          <li><b>나가기</b>: 한 바퀴 돌아 <b>출발점(참먹이)</b>에 딱 멈추면 아직 판 위에 있어요(잡힐 수도 있어요). 참먹이를 <u>지나 한 칸이라도 더</u> 가야 말이 나가고 점수(🏁)가 올라요. 2:2일 땐 같은 팀 두 사람이 번갈아 던져요.</li>
         </ul>
         <button className="btn btn-gold w-full" onClick={onClose} {...hk('Escape', 'Esc')}>닫기</button>
       </motion.div>
@@ -250,7 +321,7 @@ function ResultModal({ over, view, nameOf, you, onClose, onRematch }) {
 
 export function YutBoard() {
   const { room, user, yut: view, yutOver, turnInfo, skew, emit, send, roomChat, dismissYut } = useApp();
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotionConfig(); // 앱 애니메이션 설정을 따른다 (useReducedMotion 은 기기 설정만 본다)
   const you = user.id;
   const [chatOpen, setChatOpen] = useState(false);
   const [help, setHelp] = useState(false);
@@ -333,7 +404,9 @@ export function YutBoard() {
   const options = legal.filter((m) => m.index === idx);
   const selectable = new Set(canAct && view.phase === 'move' ? options.map((m) => m.pieceId) : []);
   const selMove = options.find((m) => m.pieceId === selected);
-  const targets = selMove ? new Set([selMove.path[selMove.path.length - 1] === 99 ? 0 : selMove.path[selMove.path.length - 1]]) : null;
+  // 목적지: 나가는(DONE) 이동도 출발점(0) 자리에 표시한다 — 0 에 멈추는 이동과는 targetExit 로 구분
+  const targetExit = selMove?.path[selMove.path.length - 1] === DONE;
+  const targets = selMove ? new Set([targetExit ? 0 : selMove.path[selMove.path.length - 1]]) : null;
 
   useEffect(() => { setSelected(null); }, [view.seq, idx]);
   useEffect(() => { if (!msg) return undefined; const t = setTimeout(() => setMsg(null), 2600); return () => clearTimeout(t); }, [msg]);
@@ -407,12 +480,12 @@ export function YutBoard() {
 
       <div className="mx-auto grid w-full max-w-[min(100%,calc(100vh-330px),640px)] gap-2">
         <TeamTray team={0} view={view} shown={display} selectable={selectable} selected={selected} onPick={pick} active={playing && view.curTeam === 0} />
-        <Board view={view} shown={display} selectable={selectable} selected={selected} onPick={pick} targets={targets} onTarget={onTarget} reduce={reduce} />
+        <Board view={view} shown={display} selectable={selectable} selected={selected} onPick={pick} targets={targets} targetExit={targetExit} onTarget={onTarget} reduce={reduce} />
         <TeamTray team={1} view={view} shown={display} selectable={selectable} selected={selected} onPick={pick} active={playing && view.curTeam === 1} />
       </div>
 
       <div className="relative z-[59] mx-auto flex w-full max-w-xl flex-wrap items-center justify-center gap-x-2 gap-y-2 rounded-xl bg-black/45 p-2 text-sm">
-        {!spectator && <EmoteButton list={YUT_EMOTES} />}
+        {!spectator && <EmoteButton game="yut" />}
         <span className="rounded px-2 py-1 font-bold" style={{ background: `${t.fill}99` }} data-testid="yut-status">{t.emoji} {status}</span>
         {view.pending.length > 0 && (
           <span className="flex items-center gap-1" role="group" aria-label="쓸 수 있는 결과">

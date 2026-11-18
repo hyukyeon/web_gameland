@@ -78,7 +78,7 @@ function GukjinChip({ view, emit }) {
 function GukjinPrompt({ onPick, onClose }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="국진 선택">
-      <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="panel w-full max-w-sm p-5 text-center">
+      <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="panel w-full max-w-sm bg-felt-800 p-5 text-center">
         <div className="mb-1 text-3xl">🍶</div>
         <h3 className="text-lg font-black text-gold-400">국진을 먹었습니다!</h3>
         <p className="mt-1 text-sm text-slate-300">9월 술잔을 어떻게 셀까요? 판 중에 점수줄의 🍶 버튼으로 바꿀 수 있어요.</p>
@@ -503,6 +503,35 @@ function GiriOverlay({ cutter, nameOf, playerOf, onDone }) {
   );
 }
 
+const NO_IDS = [];
+// 더미에서 나온 패를 더미 위에서 뒤집어 보여 주는 시간 (그다음 제자리로 날아간다)
+const STOCK_HOLD_MS = 260;
+
+/**
+ * 더미에서 막 나온 패: 직전 화면에 없던 패가 더미 장수가 줄면서 나타나면(뒤집은 패·보너스로 받은 패) 잠깐 더미 위에 붙잡아 둔다.
+ * 붙잡은 동안엔 더미 위에 그리고, 놓아주면 같은 layoutId 의 제자리 카드가 더미에서 날아간다.
+ * (렌더 중에 ref 를 갱신하지만 같은 view 면 다시 계산하지 않으므로 두 번 렌더해도 결과가 같다)
+ */
+function useStockArrivals(view) {
+  const st = useRef({ view: null, vis: null, stock: 0, fresh: NO_IDS });
+  const s = st.current;
+  if (s.view !== view) {
+    const vis = new Set([...view.floor, ...Object.values(view.captured).flat(), ...(view.hand ?? [])]);
+    s.fresh = s.vis && view.stockCount < s.stock ? [...vis].filter((id) => !s.vis.has(id) && id !== view.played) : NO_IDS;
+    s.view = view;
+    s.vis = vis;
+    s.stock = view.stockCount;
+  }
+  const [released, setReleased] = useState(null);
+  const fresh = s.fresh;
+  useEffect(() => {
+    if (!fresh.length) return undefined;
+    const t = setTimeout(() => setReleased(view), STOCK_HOLD_MS * speedScale());
+    return () => clearTimeout(t);
+  }, [view, fresh]);
+  return { held: released === view ? NO_IDS : fresh, arrived: fresh };
+}
+
 /** 최근 행동 기록: 프레임을 따라가며 누가 무엇을 내고·뒤집고·먹었는지 모은다 (최근 3건). 판이 바뀌면 비운다 */
 function useActionLog(view, resetKey) {
   const [log, setLog] = useState([]);
@@ -536,6 +565,12 @@ function useActionLog(view, resetKey) {
   }, [view, resetKey]);
   return log;
 }
+
+/** 받침이 있으면 '과', 없으면 '와' (예: 열끗과, 쌍피와) */
+const wa = (word) => {
+  const c = word.charCodeAt(word.length - 1) - 0xac00;
+  return c >= 0 && c < 11172 && c % 28 ? '과' : '와';
+};
 
 /** 작은 패 그림 (layoutId 없는 정적 이미지라 본 카드 애니메이션과 섞이지 않는다) */
 function Mini({ id, big = false }) {
@@ -604,6 +639,13 @@ export function GameBoard() {
   const [playedOnce, setPlayedOnce] = useState(false); // 첫 안내를 닫는 기준
   const nearAlert = useNearAlert(view, startInfo?.key);
   const actionLog = useActionLog(view, startInfo?.key);
+  const { held, arrived } = useStockArrivals(view);
+  // 화면에 그릴 상태: 더미 위에 붙잡아 둔 패는 제자리(바닥·획득패·손패)에서 뺀다
+  const shown = useMemo(() => {
+    if (!held.length) return view;
+    const keep = (ids) => ids.filter((id) => !held.includes(id));
+    return { ...view, floor: keep(view.floor), hand: keep(view.hand ?? []), captured: Object.fromEntries(Object.entries(view.captured).map(([k, ids]) => [k, keep(ids)])) };
+  }, [view, held]);
   // 판 시작 연출: 선 정하기(밤일낮장) → 기리 순서
   const [intro, setIntro] = useState(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null);
   useEffect(() => setIntro(startInfo?.flips ? 'first' : startInfo?.cutter != null ? 'giri' : null), [startInfo]);
@@ -635,15 +677,18 @@ export function GameBoard() {
   // 바닥패: 같은 달끼리 묶어 월 순서로 놓는다 (보너스패는 맨 뒤). 어느 달이 어디 있는지 늘 같은 순서라 찾기 쉽다.
   const floorGroups = useMemo(() => {
     const byMonth = new Map();
-    for (const id of view.floor) {
-      const m = monthOf(id);
+    // 뻑 더미에 같이 깔린 보너스패는 그 달 더미에 함께 놓는다
+    const pileOf = {};
+    for (const [m, ids] of Object.entries(view.ppeokBonus ?? {})) for (const id of ids) pileOf[id] = Number(m);
+    for (const id of shown.floor) {
+      const m = monthOf(id) || pileOf[id] || 0;
       const key = m > 0 ? m : `b${id}`;
       if (!byMonth.has(key)) byMonth.set(key, []);
       byMonth.get(key).push(id);
     }
     const rank = (k) => (typeof k === 'number' ? k : 99);
     return [...byMonth.entries()].sort(([a], [b]) => rank(a) - rank(b)).map(([month, ids]) => ({ month, ids }));
-  }, [view.floor]);
+  }, [shown.floor, view.ppeokBonus]);
   // 내 차례: 바닥과 짝이 맞는 손패/바닥패는 솟아오르고 테두리로 강조
   const floorMonths = new Set(view.floor.map(monthOf));
   const matchHand = new Set(canPlay ? view.hand.filter((id) => monthOf(id) > 0 && floorMonths.has(monthOf(id))) : []);
@@ -651,7 +696,9 @@ export function GameBoard() {
   const matchFloor = new Set(canPlay ? view.floor.filter((id) => handMonths.has(monthOf(id))) : []);
   const canDrawOnly = canPlay && (view.hand.length === 0 || view.dummies[you] > 0);
   const choiceOpts = myTurn && view.phase === 'choose' && view.choice ? view.choice.options : [];
-  const hand = useMemo(() => [...view.hand].sort((a, b) => a - b), [view.hand]);
+  // 고르기를 일으킨 패: 손에서 낸 패(step 'hand') 또는 더미에서 뒤집은 패(step 'draw')
+  const chooseFrom = choiceOpts.length ? (view.choice?.step === 'draw' ? view.drawn : view.played) : null;
+  const hand = useMemo(() => [...shown.hand].sort((a, b) => a - b), [shown.hand]);
   const opps = view.active.filter((p) => p !== you);
   const restOpp = view.rest != null && view.rest !== you ? [view.rest] : [];
 
@@ -709,6 +756,7 @@ export function GameBoard() {
   const myScore = view.scores[you];
   // 결정 창이 떠 있으면 족보/비상 팝업을 띄우지 않는다 (겹쳐서 읽을 수 없음)
   const asking =
+    (choiceOpts.length > 0 && !busy) ||
     shakeFor != null ||
     confirm != null ||
     (gukjinAsk && !busy) ||
@@ -723,7 +771,7 @@ export function GameBoard() {
         <Avatar player={user} size={30} showTitle className={myTurnNow ? '!ring-gold-400' : ''} />
         <EmoteBubble userId={you} />
       </span>
-      <EmoteButton />
+      <EmoteButton game="gostop" />
       <b className="text-sm">{user.name}</b>
       {timerFor(you)}
     </div>
@@ -762,7 +810,7 @@ export function GameBoard() {
         {/* 상대 */}
         <div className="flex gap-2">
           {[...opps, ...restOpp].map((pid) => (
-            <Opponent key={pid} view={view} pid={pid} name={nameOf(pid)} player={playerOf(pid)} turn={view.turn === pid && view.phase !== 'ended'} timer={timerFor(pid)} />
+            <Opponent key={pid} view={shown} pid={pid} name={nameOf(pid)} player={playerOf(pid)} turn={view.turn === pid && view.phase !== 'ended'} timer={timerFor(pid)} />
           ))}
         </div>
 
@@ -778,6 +826,12 @@ export function GameBoard() {
               {[2, 1, 0].map((i) => (
                 <div key={i} className="absolute" style={{ left: i * 2, top: -i * 2 }}>
                   <Card back size="md" />
+                </div>
+              ))}
+              {/* 더미에서 막 나온 패: 더미 위에서 뒤집힌 뒤 제자리로 날아간다 */}
+              {held.map((id) => (
+                <div key={id} className="absolute z-10" style={{ left: 4, top: -4 }}>
+                  <Card id={id} size="md" flip glow />
                 </div>
               ))}
             </div>
@@ -809,7 +863,7 @@ export function GameBoard() {
                         selected={match}
                         hl={match}
                         glow={opt || id === view.drawn}
-                        fresh={id === view.drawn}
+                        fresh={id === view.drawn && !arrived.includes(id)}
                         slam={id === view.played || id === view.drawn}
                         dim={choiceOpts.length > 0 && !opt}
                         onClick={opt ? () => emit('game:choose', { cardId: id }) : undefined}
@@ -817,9 +871,11 @@ export function GameBoard() {
                       />
                     );
                   })}
-                  {n >= 3 && (
+                  {/* 뻑 배지는 서버가 뻑으로 기록한 더미에만 — 같은 달 3장이 깔려 있어도 뻑이 아닐 수 있다
+                      (내 패가 바닥 2장 위에 놓여 먹을 패를 고르는 중, 처음부터 3장 깔린 판 등) */}
+                  {view.ppeokPiles?.[grp.month] != null && (
                     <span className="pointer-events-none absolute -left-1 -top-3 z-30 rounded-full bg-red-600 px-1.5 text-[10px] font-black text-white shadow">
-                      {n >= 4 ? '4장' : '뻑'}
+                      뻑
                     </span>
                   )}
                 </motion.div>
@@ -864,7 +920,7 @@ export function GameBoard() {
               </motion.span>
             </div>
             <div className="landscape-cap min-h-[42px] [--capw:calc(30px*var(--cs,1))] sm:[--capw:calc(42px*var(--cs,1))]">
-              <Captured ids={view.captured[you]} score={view.scores[you]} />
+              <Captured ids={shown.captured[you]} score={view.scores[you]} />
             </div>
             <div className="landscape-tight-hand mt-2 flex items-end justify-center overflow-x-auto pb-1 pt-4 [--hw:calc(54px*var(--cs,1))] sm:[--hw:calc(70px*var(--cs,1))]">
               {hand.map((id, i) => (
@@ -967,6 +1023,41 @@ export function GameBoard() {
           </Modal>
         )}
 
+        {choiceOpts.length > 0 && !busy && (
+          <Modal key="choose" label="먹을 패 선택">
+            <h3 className="text-xl font-black text-gold-400">먹을 패를 선택하세요</h3>
+            {chooseFrom != null && (
+              <p className="flex items-center justify-center gap-2 text-sm text-slate-200">
+                <Mini id={chooseFrom} />
+                <span>
+                  {view.choice?.step === 'draw' ? '뒤집은' : '낸'} <b>{cardName(chooseFrom)}</b>{wa(cardName(chooseFrom))} 같은 달 패가 바닥에 {choiceOpts.length}장 있어요
+                </span>
+              </p>
+            )}
+            <div className="flex justify-center gap-4">
+              {choiceOpts.map((id, i) => (
+                <motion.button
+                  key={id}
+                  type="button"
+                  onClick={() => emit('game:choose', { cardId: id })}
+                  whileHover={{ y: -6 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="group flex flex-col items-center gap-1.5 rounded-xl p-1.5 ring-2 ring-transparent transition hover:ring-gold-400 focus-visible:ring-gold-400"
+                  aria-label={`${cardName(id)} 먹기`}
+                  {...hk(String(i + 1))}
+                >
+                  {isBonus(id) ? (
+                    <Mini id={id} big />
+                  ) : (
+                    <img src={cardImg(id)} alt="" draggable={false} className="h-[150px] w-[98px] rounded-lg object-fill shadow-xl ring-2 ring-black/50 sm:h-[185px] sm:w-[120px]" />
+                  )}
+                  <span className="rounded-full bg-black/40 px-2 py-0.5 text-sm font-bold group-hover:bg-gold-500 group-hover:text-felt-900">{cardName(id)}</span>
+                </motion.button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400">고른 패와 {view.choice?.step === 'draw' ? '뒤집은' : '낸'} 패를 함께 먹고, 남은 한 장은 바닥에 남아요.{!touch && ' (키보드 1·2)'}</p>
+          </Modal>
+        )}
         {shakeFor != null && (
           <Modal key="shake" label="흔들기">
             <h3 className="text-xl font-black text-gold-400">흔들기</h3>

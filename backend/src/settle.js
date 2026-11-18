@@ -213,7 +213,7 @@ export async function settleOmok({ roomName, ante, pids, result, ranked = true }
 }
 
 /** 윷놀이 정산: 진 팀 사람마다 참가비(모자라면 가진 만큼)를 모아 이긴 팀 사람들이 똑같이 나눠 가진다. 연습 판은 호출하지 않는다. */
-export async function settleYut({ roomName, ante, pids, result }) {
+export async function settleYut({ roomName, ante, pids, result, label = '윷놀이' }) {
   return prisma.$transaction(async (tx) => {
     const users = await tx.user.findMany({ where: { id: { in: pids } } });
     const bal = Object.fromEntries(users.map((u) => [u.id, u.money]));
@@ -237,14 +237,23 @@ export async function settleYut({ roomName, ante, pids, result }) {
     }
     const game = await tx.game.create({
       data: {
-        roomName: `[윷놀이] ${roomName}`,
+        roomName: `[${label}] ${roomName}`,
         betPerPt: ante,
         playerCount: pids.length,
         nagari: false,
-        detail: `윷놀이${result.kind === 'forfeit' ? ' · 기권' : ''}`,
+        detail: `${label}${result.kind === 'forfeit' ? ' · 기권' : ''}`,
         results: { create: users.filter((u) => !u.isBot).map((u) => ({ userId: u.id, outcome: result.winners.includes(u.id) ? 'win' : 'lose', moneyDelta: delta[u.id] ?? 0 })) },
       },
     });
     return { delta, money, gameId: game.id, unlocked: {} };
   });
 }
+
+/** 라스베가스: 1등(공동 1등이면 나눠서)이 나머지 사람의 참가비를 받는다 — 윷놀이와 같은 승자/패자 정산 */
+export const settleVegas = (args) => settleYut({ ...args, label: '라스베가스' });
+
+/** 요트 다이스: 1등(공동이면 나눠서)이 나머지 사람의 참가비를 받는다 */
+export const settleYacht = (args) => settleYut({ ...args, label: '요트 다이스' });
+
+/** 장기: 진 사람이 이긴 사람에게 참가비 */
+export const settleJanggi = (args) => settleYut({ ...args, label: '장기' });

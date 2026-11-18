@@ -110,11 +110,12 @@ describe('스도쿠 엔진', () => {
 });
 
 describe('스도쿠 일일 보상 API', () => {
-  let server, base, prisma;
+  let server, base, prisma, forgetActiveCache;
   let seq = 0;
   beforeAll(async () => {
     useTempDb();
     ({ prisma } = await import('../src/db.js'));
+    ({ forgetActiveCache } = await import('../src/sudoku.js'));
     const { createServer } = await import('../src/app.js');
     ({ server } = createServer());
     await new Promise((r) => server.listen(0, r));
@@ -191,6 +192,31 @@ describe('스도쿠 일일 보상 API', () => {
     const r = await req('POST', '/api/sudoku/submit', token, { id: p.id, board: solve(p.puzzle) });
     expect(r.status).toBe(200);
     expect(r.body.sudoku.cleared).toBe(1);
+  });
+
+  test('저장하고 나가기: 입력한 숫자·걸린 시간을 DB 에 저장, 서버 재시작(메모리 비움) 뒤에도 이어서 풀고 보상', async () => {
+    const { token, user } = await signup();
+    const p = await fresh(token, 'easy');
+    const sol = solve(p.puzzle);
+    const holes = p.puzzle.map((d, i) => (d ? -1 : i)).filter((i) => i >= 0);
+    const half = [...p.puzzle];
+    holes.slice(0, 10).forEach((i) => (half[i] = sol[i]));
+    expect((await req('POST', '/api/sudoku/save', token, { id: p.id, board: half, elapsed: 125 })).body).toMatchObject({ ok: true, elapsed: 125 });
+    // 잘못된 저장: 다른 문제 · 고정 숫자 변경 · 범위 밖 숫자
+    expect((await req('POST', '/api/sudoku/save', token, { id: 'x', board: half })).status).toBe(400);
+    const tampered = [...half];
+    tampered[p.puzzle.findIndex((d) => d)] = 0;
+    expect((await req('POST', '/api/sudoku/save', token, { id: p.id, board: tampered })).status).toBe(400);
+    expect((await req('POST', '/api/sudoku/save', token, { id: p.id, board: half.map((d, i) => (i === holes[0] ? 12 : d)) })).status).toBe(400);
+
+    forgetActiveCache(); // 서버 재시작 흉내
+    const st = (await req('GET', '/api/sudoku/status', token)).body;
+    expect(st.current).toMatchObject({ id: p.id, board: half, elapsed: 125 });
+    const r = await req('POST', '/api/sudoku/submit', token, { id: p.id, board: sol });
+    expect(r.status).toBe(200);
+    const db = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(db.sudokuSave).toBeNull(); // 다 푼 판은 지운다
+    expect((await req('GET', '/api/sudoku/status', token)).body.current).toBeNull();
   });
 
   test('같은 정답을 동시에 여러 번 보내도 보상은 한 번', async () => {

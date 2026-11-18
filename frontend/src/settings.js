@@ -7,10 +7,11 @@ import { useSyncExternalStore } from 'react';
  *  - cardSize: 화투패 크기 (sm | md | lg)
  *  - vibrate: 내 차례·족보·승패 때 진동 (지원하는 기기만)
  *  - keyHints: 버튼/패에 단축키 표시
+ *  - motion: 카드 이동 애니메이션 (on = 항상 · auto = 기기의 '동작 줄이기' 따름 · off = 끔)
  */
 const KEY = 'gostop.settings';
 const DEFAULTS = {
-  sfxVolume: 0.7, bgmVolume: 0.4, speed: 'normal', cardSize: 'md', vibrate: true, keyHints: false,
+  sfxVolume: 0.7, bgmVolume: 0.4, speed: 'normal', cardSize: 'md', vibrate: true, keyHints: false, motion: 'on',
   // 오목: 판 테마 / 돌 스킨 / 수 번호(off·last3·all) / 위협 표시 / 착수 확인(auto=터치 기기만·on·off) / 좌표
   omokTheme: 'wood', omokStones: 'classic', omokNumbers: 'last3', omokThreat: false, omokConfirm: 'auto', omokCoords: true,
 };
@@ -25,6 +26,15 @@ export const SPEEDS = [
   ['normal', '보통', 1],
   ['fast', '빠르게', 0.6],
 ];
+// 기본은 항상 켬: 기기의 '동작 줄이기'가 켜져 있으면 패가 날아가지 않고 순간이동해서 게임이 사진처럼 끊겨 보인다
+export const MOTIONS = [
+  ['on', '켜기'],
+  ['auto', '기기 설정'],
+  ['off', '끄기'],
+];
+/** framer-motion MotionConfig 의 reducedMotion 값 */
+export const reducedMotionOf = (m) => ({ on: 'never', auto: 'user', off: 'always' })[m] ?? 'never';
+
 export const CARD_SIZES = [
   ['sm', '작게', 0.88],
   ['md', '보통', 1],

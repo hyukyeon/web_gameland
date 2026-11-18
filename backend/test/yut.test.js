@@ -13,10 +13,13 @@ describe('윷판 그래프', () => {
     expect(c.every((p) => p && p.every((v) => v >= 0 && v <= 100))).toBe(true);
     expect(new Set(c.map((p) => p.map((v) => Math.round(v)).join())).size).toBe(NODES);
   });
-  test('바깥 길: 대기 → 도(1) → … → 19 다음은 도착', () => {
+  test('바깥 길: 대기 → 도(1) → … → 19 다음은 참먹이(0), 0 을 넘어야 도착', () => {
     expect(forward(WAIT, [], 3)).toEqual([1, 2, 3]);
-    expect(forward(18, [18], 3)).toEqual([19, DONE]);
-    expect(step(19, null, true)).toBe(DONE);
+    expect(forward(18, [18], 3)).toEqual([19, 0, DONE]);
+    expect(forward(18, [18], 2)).toEqual([19, 0]); // 참먹이에 딱 멈추면 아직 판 위
+    expect(step(19, null, true)).toBe(0);
+    expect(step(0, 19, true)).toBe(DONE);
+    expect(forward(0, [19, 0], 1)).toEqual([DONE]); // 참먹이에서 도만 나와도 나간다
   });
   test('우상단 모서리(5)에서 출발하면 대각선, 지나치기만 하면 바깥 길', () => {
     expect(forward(5, [5], 1)).toEqual([20]);
@@ -29,14 +32,17 @@ describe('윷판 그래프', () => {
     expect(forward(9, [9], 3)).toEqual([10, 11, 12]);
   });
   test('방(22)에서 출발하면 곧장 도착 쪽 지름길, 방을 지나칠 땐 가던 대각선', () => {
-    expect(forward(22, [5, 20, 21, 22], 3)).toEqual([27, 28, DONE]);
+    expect(forward(22, [5, 20, 21, 22], 3)).toEqual([27, 28, 0]);
+    expect(forward(22, [5, 20, 21, 22], 4)).toEqual([27, 28, 0, DONE]);
     expect(forward(21, [5, 20, 21], 3)).toEqual([22, 23, 24]); // 우상단 대각선은 좌하단(15)으로
     expect(forward(24, [5, 20, 21, 22, 23, 24], 2)).toEqual([15, 16]);
     expect(forward(26, [10, 25, 26], 3)).toEqual([22, 27, 28]);
   });
   test('도착은 넘어가도 도착', () => {
-    expect(forward(19, [19], 5)).toEqual([DONE]);
-    expect(forward(28, [28], 4)).toEqual([DONE]);
+    expect(forward(19, [19], 5)).toEqual([0, DONE]);
+    expect(forward(28, [28], 4)).toEqual([0, DONE]);
+    expect(forward(19, [19], 1)).toEqual([0]);
+    expect(forward(28, [28], 1)).toEqual([0]);
   });
 });
 
@@ -192,13 +198,35 @@ describe('빽도', () => {
     expect(g.turn).toBe(2);
     expect(g.pending).toEqual([]);
   });
-  test('시작 지점(도, 1번 칸)의 말은 빽도로 대기실로 돌아갈 수 없다', () => {
-    const g = game(['back']);
+  test('도(1번 칸)에서 빽도: 참먹이(0)로 간다 — 판 위에 남고, 거기서 한 칸이라도 더 가야 나간다', () => {
+    const g = game(['back', 'do']);
     put(g, { 0: 1 });
     g.throw(1);
-    expect(g.turn).toBe(2); // 쓸 수 있는 수가 없어 소멸
-    expect(g.pieces[0].pos).toBe(1);
-    expect(g.legalMoves()).toEqual([]);
+    expect(g.legalMoves()).toEqual([{ pieceId: 0, index: 0, kind: 'back', path: [0] }]);
+    expect(g.move(1, 0, 0).ok).toBe(true);
+    expect(g.pieces[0].pos).toBe(0); // 참먹이 — 아직 점수 아님
+    expect(g.score[0]).toBe(0);
+    expect(g.turn).toBe(2);
+    // 상대 차례가 지나고 다시 내 차례: 도만 나와도 참먹이를 넘어 나간다
+    g.turn = 1; g.curTeam = 0; g.phase = 'throw'; g.throwsLeft = 1; g.thrown = false;
+    g.throw(1);
+    expect(g.legalMoves().find((m) => m.pieceId === 0).path).toEqual([DONE]);
+    g.move(1, 0, 0);
+    expect(g.pieces[0].pos).toBe(DONE);
+    expect(g.score[0]).toBe(1);
+  });
+  test('도에서 빽도로 참먹이에 간 말은 다시 빽도를 쓸 수 없고, 거기 있는 상대 말은 잡는다', () => {
+    const g = game(['back']);
+    put(g, { 0: 1, 4: 0 }); // 상대(홍) 말이 참먹이에 멈춰 있음
+    g.pieces[4].trail = [19, 0];
+    g.throw(1);
+    g.move(1, 0, 0);
+    expect(g.pieces[0].pos).toBe(0);
+    expect(g.pieces[4].pos).toBe(WAIT); // 잡힘
+    expect(g.phase).toBe('throw'); // 잡으면 한 번 더
+    g.script.push('back');
+    g.throw(1);
+    expect(g.legalMoves().filter((m) => m.pieceId === 0)).toEqual([]); // 참먹이(빽도로 온 말)에선 뒤로 못 감
   });
   test('빽도는 한 칸 뒤로: 보통 칸', () => {
     const g = game(['back']);
@@ -242,8 +270,8 @@ describe('승리 · 기권', () => {
   const nearlyWon = (g, team) => {
     for (const p of g.pieces.filter((x) => x.team === team).slice(0, 3)) p.pos = DONE;
     const last = g.pieces.filter((x) => x.team === team)[3];
-    last.pos = 19;
-    last.trail = [19];
+    last.pos = 0; // 참먹이(출발점)에 멈춰 있는 마지막 말 — 한 칸만 더 가면 나간다
+    last.trail = [19, 0];
   };
   test('말 4개가 모두 도착하면 그 팀 승리 · 정산 net', () => {
     const g = game(['do']);
@@ -256,10 +284,21 @@ describe('승리 · 기권', () => {
   });
   test('업은 말이 함께 도착한다', () => {
     const g = game(['gae']);
-    put(g, { 0: 18, 1: 18, 2: DONE, 3: DONE });
+    put(g, { 0: 19, 1: 19, 2: DONE, 3: DONE }); // 19 → 0(참먹이) → 나감: 개(2칸)
     g.throw(1); g.move(1, 0, 0);
     expect(g.score[0]).toBe(4);
     expect(g.phase).toBe('ended');
+  });
+  test('참먹이(출발점)에 딱 멈추면 나가지 않고 판 위에 남는다 · 거기서 잡힐 수 있다', () => {
+    const g = game(['gae', 'do']);
+    put(g, { 0: 18, 4: 19 });
+    g.throw(1); g.move(1, 0, 0); // 청: 18 + 2 = 0(참먹이)
+    expect(g.pieces[0].pos).toBe(0);
+    expect(g.score[0]).toBe(0);
+    expect(g.phase).not.toBe('ended');
+    g.throw(2); g.move(2, 4, 0); // 홍: 19 + 1 = 0 → 청 말을 잡는다
+    expect(g.pieces[4].pos).toBe(0);
+    expect(g.pieces[0].pos).toBe(WAIT);
   });
   test('2:2 — 팀은 번갈아, 팀 안에서도 돌아가며 던진다', () => {
     const g = game(Array(8).fill('back'), [1, 2, 3, 4]);
@@ -322,7 +361,7 @@ describe('AI · 무작위 대국', () => {
     const m = new YutBot({ level: 'hard' }).decide(g);
     expect(m.pieceId).toBe(4); // 2 + 1 = 3 : 청 말을 잡는 수
     const h = game(['do']);
-    h.pieces[0].pos = 19; h.pieces[0].trail = [19];
+    h.pieces[0].pos = 0; h.pieces[0].trail = [19, 0]; // 참먹이에서 도 → 나감
     h.throw(1);
     expect(new YutBot({ level: 'hard' }).decide(h).pieceId).toBe(0);
   });

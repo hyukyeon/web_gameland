@@ -28,7 +28,7 @@ export class YutBot {
     const piece = game.pieces.find((p) => p.id === m.pieceId);
     const t = piece.team;
     const n = THROWS[m.kind].n;
-    const path = n < 0 ? [piece.trail[piece.trail.length - 2]] : forward(piece.pos, piece.trail, n);
+    const path = n < 0 ? [piece.trail.length >= 2 ? piece.trail[piece.trail.length - 2] : 0] : forward(piece.pos, piece.trail, n); // 도에서 빽도는 참먹이(0)
     const dest = path[path.length - 1];
     const group = game.groupOf(piece).length;
     let s = 0;

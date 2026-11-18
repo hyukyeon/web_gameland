@@ -66,6 +66,12 @@ export function AppProvider({ children }) {
   const [omokOver, setOmokOver] = useState(null);
   const [yut, setYut] = useState(null); // 윷놀이 뷰 { pieces, turn, phase, pending, legal, lastThrow, lastMove ... }
   const [yutOver, setYutOver] = useState(null);
+  const [vegas, setVegas] = useState(null); // 라스베가스 뷰 { casinos, dice, roll, turn, phase, lastPlace, lastRound ... }
+  const [vegasOver, setVegasOver] = useState(null);
+  const [yacht, setYacht] = useState(null); // 요트 다이스 뷰 { dice, held, rollsLeft, options, sheets, totals, turn, phase ... }
+  const [yachtOver, setYachtOver] = useState(null);
+  const [janggi, setJanggi] = useState(null); // 장기 뷰 { board, turn, phase, legal, last, check, bikjang ..., setupDeadline }
+  const [janggiOver, setJanggiOver] = useState(null);
   const [omokUndo, setOmokUndo] = useState(null); // 무르기 요청/결과 { state: ask|granted|declined|expired, from, deadlineAt, key }
   const [turnInfo, setTurnInfo] = useState(null); // { userId, deadlineAt } 현재 베팅 차례
   const [seotdaNote, setSeotdaNote] = useState(null); // 구사 재경기 안내 등
@@ -202,6 +208,12 @@ export function AppProvider({ children }) {
       setOmokOver(null);
       setYut(null);
       setYutOver(null);
+      setVegas(null);
+      setVegasOver(null);
+      setYacht(null);
+      setYachtOver(null);
+      setJanggi(null);
+      setJanggiOver(null);
       setSeotda(null);
       setSeotdaOver(null);
       setTurnInfo(null);
@@ -235,12 +247,18 @@ export function AppProvider({ children }) {
       setStartInfo({ first, flips, cutter, ranked, key: Date.now() });
     });
     // 서버가 내려주는 전체 상태로 화면을 통째로 덮어쓴다 (재접속·새로고침·앱 복귀). 진행 중이던 재생은 모두 버린다.
-    s.on('SYNC_BOARD_STATE', ({ room: r, chat, view: v, seotda: sd, omok: om, yut: yt, tieVote: tv, over: o, ranked, serverTime }) => {
+    s.on('SYNC_BOARD_STATE', ({ room: r, chat, view: v, seotda: sd, omok: om, yut: yt, vegas: vg, yacht: ya, janggi: jg, tieVote: tv, over: o, ranked, serverTime }) => {
       setSeotda(sd ?? null);
       setOmok(om ?? null);
       setOmokOver(null);
       setYut(yt ?? null);
       setYutOver(o?.teams ? o : null);
+      setVegas(vg ?? null);
+      setVegasOver(o?.vegas ? o : null);
+      setYacht(ya ?? null);
+      setYachtOver(o?.yacht ? o : null);
+      setJanggi(jg ? { ...jg.view, setupDeadline: jg.setupDeadline } : null);
+      setJanggiOver(o?.janggi ? o : null);
       setSeotdaDeal(null);
       setTieVote(tv ?? null);
       setTurnInfo(null);
@@ -256,7 +274,7 @@ export function AppProvider({ children }) {
       lastFrame.current = v;
       pendingOver.current = null;
       setStartInfo(v ? { first: null, flips: null, ranked } : null);
-      if (o && o.black == null && !o.teams) setOver(o); // 오목 결과(black 있음)는 보드가 없으니 고스톱 결과창에 쓰지 않는다
+      if (o && o.black == null && !o.teams && !o.vegas && !o.yacht && !o.janggi) setOver(o); // 오목 결과(black 있음)는 보드가 없으니 고스톱 결과창에 쓰지 않는다
       else if (!r || v) setOver(null);
     });
     // ----- 섯다 -----
@@ -296,10 +314,34 @@ export function AppProvider({ children }) {
     });
     s.on('yut:state', ({ view: v }) => setYut(v));
     s.on('yut:over', setYutOver);
+    // ----- 라스베가스 -----
+    s.on('vegas:start', ({ view: v }) => {
+      setVegas(v);
+      setVegasOver(null);
+      sfx('deal');
+    });
+    s.on('vegas:state', ({ view: v }) => setVegas(v));
+    s.on('vegas:over', setVegasOver);
+    // ----- 요트 다이스 -----
+    s.on('yacht:start', ({ view: v }) => {
+      setYacht(v);
+      setYachtOver(null);
+      sfx('deal');
+    });
+    s.on('yacht:state', ({ view: v }) => setYacht(v));
+    s.on('yacht:over', setYachtOver);
+    // ----- 장기 -----
+    s.on('janggi:start', ({ view: v, setupDeadline }) => {
+      setJanggi({ ...v, setupDeadline });
+      setJanggiOver(null);
+      sfx('deal');
+    });
+    s.on('janggi:state', ({ view: v, setupDeadline }) => setJanggi({ ...v, setupDeadline }));
+    s.on('janggi:over', setJanggiOver);
     s.on('TURN_START', (t) => {
       setTurnInfo(t);
       // 고스톱은 프레임 재생 시점에 차례 효과음이 나므로 섯다·오목만
-      if ((t.game === 'seotda' || t.game === 'omok' || t.game === 'yut') && t.userId === userRef.current?.id && !t.auto) sfx('turn');
+      if ((t.game === 'seotda' || t.game === 'omok' || t.game === 'yut' || t.game === 'vegas' || t.game === 'yacht' || t.game === 'janggi') && t.userId === userRef.current?.id && !t.auto) sfx('turn');
     });
     // 섯다 동점: 묻고 더블 투표
     s.on('seotda:tieVote', (v) => setTieVote(v));
@@ -394,7 +436,7 @@ export function AppProvider({ children }) {
   const send = useCallback((event, payload) => sockRef.current?.emit(event, payload), []);
 
   const value = {
-    token, user, updateUser: setUser, skew, omok, omokOver, omokUndo, dismissOmok: () => { setOmok(null); setOmokOver(null); }, yut, yutOver, dismissYut: () => { setYut(null); setYutOver(null); }, seotda, seotdaOver, seotdaDeal, seotdaEvent, turnInfo, seotdaNote, tieVote, dismissSeotda: () => { setSeotda(null); setSeotdaOver(null); setSeotdaNote(null); setTieVote(null); }, emotes, reward, closeReward: () => setReward(null), claimGaepyeong, booting, connected, rooms, lobbyChat, room, roomChat, view, banner, combo, busy, over, startInfo, toast,
+    token, user, updateUser: setUser, skew, omok, omokOver, omokUndo, dismissOmok: () => { setOmok(null); setOmokOver(null); }, yut, yutOver, dismissYut: () => { setYut(null); setYutOver(null); }, vegas, vegasOver, dismissVegas: () => { setVegas(null); setVegasOver(null); }, yacht, yachtOver, dismissYacht: () => { setYacht(null); setYachtOver(null); }, janggi, janggiOver, dismissJanggi: () => { setJanggi(null); setJanggiOver(null); }, seotda, seotdaOver, seotdaDeal, seotdaEvent, turnInfo, seotdaNote, tieVote, dismissSeotda: () => { setSeotda(null); setSeotdaOver(null); setSeotdaNote(null); setTieVote(null); }, emotes, reward, closeReward: () => setReward(null), claimGaepyeong, booting, connected, rooms, lobbyChat, room, roomChat, view, banner, combo, busy, over, startInfo, toast,
     auth, logout, emit, send, notify, dismissOver: () => {
       setOver(null);
       setView(null);

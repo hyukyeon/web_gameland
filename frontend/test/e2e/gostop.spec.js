@@ -61,6 +61,6 @@ test('고스톱: 첫 안내는 한 장 내면 닫히고, 나가기는 앱 안 �
   await expect(ask).toHaveCount(0);
   await page.getByRole('button', { name: /나가기/ }).click();
   await ask.getByRole('button', { name: '나가기' }).click();
-  await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /AI 대전/ })).toBeVisible();
   expect(errors).toEqual([]);
 });

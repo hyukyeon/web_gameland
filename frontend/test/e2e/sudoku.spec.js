@@ -31,6 +31,7 @@ function solve(puzzle) {
 test('스도쿠: 난이도·보상 현황 표시, 칸 선택 후 넘패드 입력/지우기, 다 풀면 +1,000원·남은 보상 9회', async ({ page }) => {
   const { errors } = await signup(page);
   await page.getByRole('button', { name: /스도쿠/ }).first().click();
+  await page.getByRole('button', { name: /입장하기|이어서 풀기/ }).click();
   const grid = page.getByRole('grid', { name: '스도쿠 판' });
   await expect(grid.getByRole('gridcell')).toHaveCount(81);
   await expect(page.getByText(/오늘 남은 클리어 보상: 10/)).toBeVisible();
@@ -72,5 +73,34 @@ test('스도쿠: 난이도·보상 현황 표시, 칸 선택 후 넘패드 입�
   await done.getByRole('button', { name: '다음 문제' }).click();
   await expect(done).toHaveCount(0);
   await expect(grid.getByRole('gridcell', { name: /빈칸/ })).toHaveCount(30);
+  expect(errors).toEqual([]);
+});
+
+test('스도쿠 저장하고 나가기 → 로비에 "이어서 풀기" → 들어가면 입력한 숫자 그대로 / 슬롯머신도 입장·나가기', async ({ page }) => {
+  const { errors } = await signup(page);
+  await page.getByRole('button', { name: /스도쿠/ }).first().click();
+  await page.getByRole('button', { name: '🚪 입장하기' }).click();
+  const grid = page.getByRole('grid', { name: '스도쿠 판' });
+  await expect(grid.getByRole('gridcell')).toHaveCount(81);
+  const labels = await grid.getByRole('gridcell').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  const hole = labels.findIndex((l) => l.includes('빈칸'));
+  await grid.getByRole('gridcell').nth(hole).click();
+  await page.getByRole('button', { name: '7 입력' }).click();
+  await expect(grid.getByRole('gridcell').nth(hole)).toHaveText('7');
+  // 이 기기의 자동 저장을 지워 서버 저장만으로 이어지는지 본다
+  await page.evaluate(() => localStorage.removeItem('sudoku.progress'));
+  await page.getByRole('button', { name: '저장하고 나가기' }).first().click();
+  await expect(grid).toHaveCount(0);
+  await page.getByRole('button', { name: '▶ 이어서 풀기' }).click();
+  await expect(grid.getByRole('gridcell').nth(hole)).toHaveText('7');
+  await page.getByRole('button', { name: '저장하고 나가기' }).first().click();
+
+  await page.getByRole('button', { name: /슬롯머신/ }).first().click();
+  await page.getByRole('button', { name: '🚪 입장하기' }).click();
+  await expect(page.getByRole('heading', { name: /슬롯머신/ }).first()).toBeVisible();
+  await page.getByRole('button', { name: '규칙 보기' }).click();
+  await expect(page.getByRole('dialog', { name: '슬롯머신 규칙' })).toBeVisible();
+  await page.getByRole('button', { name: '나가기' }).click();
+  await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible();
   expect(errors).toEqual([]);
 });

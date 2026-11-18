@@ -571,7 +571,7 @@ export function SeotdaBoard() {
       <div className={wide ? 'fixed bottom-2 right-2 z-[59] w-[min(36vw,300px)]' : 'relative z-[59] min-h-[56px]'}>
         {!spectator && (
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl bg-black/55 p-2">
-            <EmoteButton />
+            <EmoteButton game="seotda" />
             <AnimatePresence mode="wait">
               {o ? (
                 <motion.div key="bar" className="flex flex-wrap items-center justify-center gap-2" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

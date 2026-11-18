@@ -3,8 +3,10 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-:root { --cs: var(--cs-user, 1); }
-body { @apply bg-felt-900 text-slate-100 antialiased; margin: 0; }
+:root { --cs: var(--cs-user, 1); color-scheme: light only !important; } /* 다크 모드에서도 같은 색 (index.html meta 와 짝) */
+/* 배경·글자색을 명시적으로 고정 (투명 배경이면 브라우저 기본/다크 배경이 비친다) */
+html { background-color: #0b2a1c; color: #f1f5f9; }
+body { @apply bg-felt-900 text-slate-100 antialiased; margin: 0; background-color: #0b2a1c; color: #f1f5f9; }
 
 @layer components {
 .btn { @apply rounded-lg px-4 py-2 text-sm font-bold transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed; }
@@ -25,6 +27,21 @@ body { @apply bg-felt-900 text-slate-100 antialiased; margin: 0; }
 .card-bonus {
   background: radial-gradient(circle at 50% 35%, #fde68a, #f59e0b 60%, #b45309);
   border: 2px solid #78350f;
+}
+/* 보너스패 그림(이미지 없음): 글자를 카드 폭 기준(cqw)으로 키워 획득패처럼 작은 카드에서도 넘치지 않게 */
+.bonus-face {
+  container-type: size;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; width: 100%; overflow: hidden;
+  text-align: center; font-weight: 900; line-height: 1; color: #451a03; white-space: nowrap;
+}
+/* cq 단위는 자식에서만 이 카드 기준이 된다(.bonus-face 자신의 gap 은 바깥 컨테이너 기준이라 쓰지 않는다) */
+.bonus-face > * + * { margin-top: 6cqh; }
+.bonus-face .bonus-label { font-size: 21cqw; }
+.bonus-face .bonus-star { font-size: 34cqw; letter-spacing: -0.08em; }
+@container (max-width: 34px) {
+  .bonus-face .bonus-label { display: none; }
+  .bonus-face .bonus-star { font-size: 44cqw; margin-top: 0; }
 }
 
 /* 키보드로 이동할 때만 보이는 포커스 테두리 (#26 접근성) */

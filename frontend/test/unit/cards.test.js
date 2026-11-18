@@ -11,6 +11,8 @@ describe('카드 기본 정보', () => {
     expect(cardName(1)).toBe('1월 띠');
     expect(cardName(48)).toBe('보너스 쌍피');
     expect(isBonus(49)).toBe(true);
+    expect(isBonus(50)).toBe(true); // 보너스 3장(48~50)
+    expect(cardName(50)).toBe('보너스 쌍피');
     expect(monthOf(48)).toBe(0);
   });
 

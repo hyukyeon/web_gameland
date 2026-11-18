@@ -11,6 +11,9 @@ import { Loading } from './components/Loading.jsx';
 const GameBoard = lazyNamed(() => import('./components/GameBoard.jsx'), 'GameBoard');
 const OmokBoard = lazyNamed(() => import('./components/OmokBoard.jsx'), 'OmokBoard');
 const YutBoard = lazyNamed(() => import('./components/YutBoard.jsx'), 'YutBoard');
+const VegasBoard = lazyNamed(() => import('./components/VegasBoard.jsx'), 'VegasBoard');
+const YachtBoard = lazyNamed(() => import('./components/YachtBoard.jsx'), 'YachtBoard');
+const JanggiBoard = lazyNamed(() => import('./components/JanggiBoard.jsx'), 'JanggiBoard');
 const SeotdaBoard = lazyNamed(() => import('./components/SeotdaBoard.jsx'), 'SeotdaBoard');
 
 function Toast() {
@@ -88,12 +91,12 @@ function RewardModal() {
 }
 
 export default function App() {
-  const { token, user, booting, room, view, seotda, omok, yut } = useApp();
+  const { token, user, booting, room, view, seotda, omok, yut, vegas, yacht, janggi } = useApp();
   // 방에 들어가면 게임 화면 코드를 미리 받아 둔다 (시작 순간 로딩 표시가 뜨지 않게)
   const roomType = room?.game;
   React.useEffect(() => {
     if (!roomType) return;
-    (roomType === 'seotda' ? import('./components/SeotdaBoard.jsx') : roomType === 'omok' ? import('./components/OmokBoard.jsx') : roomType === 'yut' ? import('./components/YutBoard.jsx') : import('./components/GameBoard.jsx')).catch(() => {});
+    (roomType === 'seotda' ? import('./components/SeotdaBoard.jsx') : roomType === 'omok' ? import('./components/OmokBoard.jsx') : roomType === 'yut' ? import('./components/YutBoard.jsx') : roomType === 'vegas' ? import('./components/VegasBoard.jsx') : roomType === 'yacht' ? import('./components/YachtBoard.jsx') : roomType === 'janggi' ? import('./components/JanggiBoard.jsx') : import('./components/GameBoard.jsx')).catch(() => {});
   }, [roomType]);
   let screen;
   if (booting) screen = <Loading />;
@@ -102,11 +105,17 @@ export default function App() {
   else if (room && seotda) screen = <SeotdaBoard />;
   else if (room && omok) screen = <OmokBoard />;
   else if (room && yut) screen = <YutBoard />;
+  else if (room && vegas) screen = <VegasBoard />;
+  else if (room && yacht) screen = <YachtBoard />;
+  else if (room && janggi) screen = <JanggiBoard />;
   else if (room) screen = <Room />;
   else screen = <Lobby />;
   return (
     <>
-      <Suspense fallback={<Loading />}>{screen}</Suspense>
+      {/* 모든 화면 뒤에 불투명 배경을 깐다 (다크 모드·투명 배경으로 색이 섞이지 않게) */}
+      <div className="h-full bg-felt-900 text-slate-100">
+        <Suspense fallback={<Loading />}>{screen}</Suspense>
+      </div>
       <Toast />
       <RewardModal />
       <DisconnectOverlay />

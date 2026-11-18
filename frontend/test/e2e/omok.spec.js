@@ -40,7 +40,7 @@ test('오목 AI 연습: 착수 · 봇 응수 · 마지막 수 표시 · 규칙 �
     await expect(page.getByRole('button', { name: /준비/ }).first()).toBeVisible();
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: /나가기|방 나가기/ }).first().click();
-    await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /AI 대전/ })).toBeVisible();
     expect(errors).toEqual([]);
     return;
   }
@@ -55,7 +55,7 @@ test('오목 AI 연습: 착수 · 봇 응수 · 마지막 수 표시 · 규칙 �
   if (await over.isVisible().catch(() => false)) await over.getByRole('button', { name: '대기실로' }).click();
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: /나가기/ }).first().click();
-  await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /AI 대전/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -171,7 +171,7 @@ test('오목 보조 기능: 좌표 · 수 번호 · 금지수 ✕ · 무르기 �
 
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: '나가기' }).click();
-  await expect(page.getByRole('button', { name: /AI 1:1 연습/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /AI 대전/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

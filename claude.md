@@ -1,6 +1,6 @@
-# 🎰 강원랜드 — 프로젝트 지침 (claude.md)
+# 🎴 강원게임랜드 — 프로젝트 지침 (claude.md)
 
-실시간 멀티플레이어 카지노 웹 앱. 게임: **고스톱 · 섯다 · 슬롯머신 · 오목 · 윷놀이 · 스도쿠**.
+실시간 멀티플레이어 카지노 웹 앱. 게임: **고스톱 · 섯다 · 슬롯머신 · 오목 · 윷놀이 · 라스베가스 · 요트 다이스 · 장기 · 스도쿠**.
 인증/게임 머니/전적/랭킹/업적/채팅/AI 봇/관전/재접속 복구를 갖춘 풀스택.
 
 ## 0. 세션 시작·종료 규칙 (가장 중요)
@@ -18,12 +18,13 @@
 - Frontend: React 19 + Vite 8 + Tailwind 3 + Framer Motion (`frontend/`)
 - Backend: Node (ESM) + Express 5 + Socket.IO + Prisma 6 / SQLite (`backend/`)
 - 테스트: Jest(ESM) / Vitest+Testing Library / Playwright
-- 에셋: 화투패 이미지 `./pics/row-R-column-C.png` (백엔드가 `/pics` 로 서빙). 뒷면·보너스패는 CSS.
+- 에셋: 화투패 이미지 `./pics/row-R-column-C.png` (백엔드가 `/pics` 로 서빙). 뒷면·보너스패는 CSS. 대표 로고 `frontend/public/logo-mark.svg` + `Logo.jsx`.
 
 ## 2. 실행·테스트 명령
 | 용도 | 명령 |
 |---|---|
-| 서버(실서비스 DB) | `cd backend && npx prisma migrate deploy && nohup npm start > ../server.log 2>&1 &` (포트 4000, `frontend/dist` 서빙) |
+| 서버(실서비스 DB) | systemd 사용자 서비스 `gostop` (`~/.config/systemd/user/gostop.service`, linger 켬 → 재부팅 시 자동 시작·죽으면 3초 뒤 재시작). 내용은 `backend` 에서 `node --env-file=.env src/index.js`, 로그는 `server.log` 에 이어 씀. 스키마 바뀌면 먼저 `cd backend && npx prisma migrate deploy` |
+| 외부 공개 | tailscale funnel: `(funnel 공개 주소 — 이 PC 에서 `tailscale funnel status` 로 확인)` → `127.0.0.1:4000` (`tailscale funnel --bg 4000`, 끄기 `tailscale funnel --https=443 off`). 공개 중이므로 `.env` 의 `JWT_SECRET`(64자 무작위)·`TRUST_PROXY=1` 유지 |
 | 프론트 빌드 | `cd frontend && npx vite build` |
 | 프론트 개발 | `cd frontend && npm run dev` (5173, `/api`·`/pics`·`/socket.io` 를 4000 으로 프록시) |
 | 백엔드 테스트 | `cd backend && npm test` (임시 SQLite 로 격리됨) |
@@ -36,7 +37,7 @@
 
 ## 3. 작업 시 지켜야 할 제약
 - **실제 DB(`backend/prisma/dev.db`)에 테스트·스크립트를 돌리지 않는다.** 임시 DB 경로를 명시해 쓴다(`backend/test/helpers/db.js` 참고).
-- 서버 재시작: `ss -ltnp | sed -n 's/.*:4000 .*pid=\([0-9]*\).*/\1/p'` 로 pid 를 얻어 kill 후 다시 `npm start`. **`pkill`/`pgrep -f` 같이 내 셸까지 매치할 수 있는 패턴 금지**, 사용자의 다른 node/vite 프로세스는 건드리지 않는다.
+- 서버 재시작: `systemctl --user restart gostop` (상태 `systemctl --user status gostop`, 끄기 `stop`, 자동 시작 해제 `disable`). 서비스 밖에서 `nohup` 으로 따로 띄우지 말 것 — 포트 4000 이 겹친다. **`pkill`/`pgrep -f` 같이 내 셸까지 매치할 수 있는 패턴 금지**, 사용자의 다른 node/vite 프로세스는 건드리지 않는다.
 - 사용자 이메일(git config 에만 존재)은 식별용일 뿐 어떤 외부 서비스에도 보내지 않는다.
 - 패키지는 **버전 고정**, 공개된 지 2주 이상 된 버전만.
 - 임시 파일은 세션 스크래치패드 디렉터리에만 둔다(프로젝트 안·`/tmp` 직접 사용 금지).
@@ -47,7 +48,7 @@
 - **서버 권위**: 턴·패 분배·점수·고/스톱 등 모든 게임 상태는 서버만 갖는다. 클라이언트는 `viewOf` 가 만든 뷰만 받는다(상대 패 은닉).
 - **경제**: 게임 종료 시 `settle*` 가 Prisma 트랜잭션으로 머니/전적을 증감. 패자는 가진 만큼만 지불(제로섬).
 - **AI 봇**: `User.isBot` 더미 계정. **사람 1명 + AI = 연습(머니·전적·기록 무변동)**, **사람 2명 이상 + AI = 실전(사람만 정상 증감, 봇은 무한 자본·불변)**. 봇은 로그인/랭킹/가입 접두(`AI봇`) 차단.
-- 고스톱·섯다·오목·윷놀이는 방(`room`) 단위, 슬롯머신(`/api/slot`)·스도쿠(`/api/sudoku`, 하루 10회 × 1,000원 보상)는 REST 단독.
+- 고스톱·섯다·오목·윷놀이·라스베가스·요트 다이스·장기는 방(`room`) 단위, 슬롯머신(`/api/slot`)·스도쿠(`/api/sudoku`, 하루 10회 × 1,000원 보상)는 REST 단독.
 
 ## 5. 문서 지도
 | 파일 | 내용 |
