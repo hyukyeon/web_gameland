@@ -24,7 +24,7 @@
 | 용도 | 명령 |
 |---|---|
 | 서버(실서비스 DB) | systemd 사용자 서비스 `gostop` (`~/.config/systemd/user/gostop.service`, linger 켬 → 재부팅 시 자동 시작·죽으면 3초 뒤 재시작). 내용은 `backend` 에서 `node --env-file=.env src/index.js`, 로그는 `server.log` 에 이어 씀. 스키마 바뀌면 먼저 `cd backend && npx prisma migrate deploy` |
-| 외부 공개 | tailscale funnel: `(funnel 공개 주소 — 이 PC 에서 `tailscale funnel status` 로 확인)` → `127.0.0.1:4000` (`tailscale funnel --bg 4000`, 끄기 `tailscale funnel --https=443 off`). 공개 중이므로 `.env` 의 `JWT_SECRET`(64자 무작위)·`TRUST_PROXY=1` 유지 |
+| 외부 공개 | tailscale funnel: 공개 주소(저장소엔 적지 않음 — 이 PC 에서 `tailscale funnel status` 로 확인) → `127.0.0.1:4000` (`tailscale funnel --bg 4000`, 끄기 `tailscale funnel --https=443 off`). 공개 중이므로 `.env` 의 `JWT_SECRET`(64자 무작위)·`TRUST_PROXY=1` 유지 |
 | 프론트 빌드 | `cd frontend && npx vite build` |
 | 프론트 개발 | `cd frontend && npm run dev` (5173, `/api`·`/pics`·`/socket.io` 를 4000 으로 프록시) |
 | 백엔드 테스트 | `cd backend && npm test` (임시 SQLite 로 격리됨) |
@@ -38,7 +38,7 @@
 ## 3. 작업 시 지켜야 할 제약
 - **실제 DB(`backend/prisma/dev.db`)에 테스트·스크립트를 돌리지 않는다.** 임시 DB 경로를 명시해 쓴다(`backend/test/helpers/db.js` 참고).
 - 서버 재시작: `systemctl --user restart gostop` (상태 `systemctl --user status gostop`, 끄기 `stop`, 자동 시작 해제 `disable`). 서비스 밖에서 `nohup` 으로 따로 띄우지 말 것 — 포트 4000 이 겹친다. **`pkill`/`pgrep -f` 같이 내 셸까지 매치할 수 있는 패턴 금지**, 사용자의 다른 node/vite 프로세스는 건드리지 않는다.
-- 사용자 이메일(git config 에만 존재)은 식별용일 뿐 어떤 외부 서비스에도 보내지 않는다.
+- 사용자 이메일은 식별용일 뿐 어떤 외부 서비스에도 보내지 않는다. 저장소가 **공개**(2026-11-18)라 커밋 작성자 이메일은 이 저장소의 git config 에 GitHub 비공개 주소(`…@users.noreply.github.com`)로 고정 — 실제 이메일·실서버 주소·비밀키를 커밋·문서에 넣지 말 것.
 - 패키지는 **버전 고정**, 공개된 지 2주 이상 된 버전만.
 - 임시 파일은 세션 스크래치패드 디렉터리에만 둔다(프로젝트 안·`/tmp` 직접 사용 금지).
 - 사용자를 지칭할 때 성별을 모르면 they/them.

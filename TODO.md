@@ -10,7 +10,7 @@
 - [x] task.md Part 1: 다크 모드 고정 · 강원게임랜드 이름/로고/첫 화면 · 윷 던지기·업기 그래픽 · AI 대전(난이도 + AI 수) — 현재 상태는 `PROGRESS.md` §0·§2·윷놀이
 - [x] 슬롯머신·스도쿠 입장 화면(`SoloRoom`), 스도쿠 저장하고 나가기(DB `sudokuSave`), 오목돌 그라데이션(강제 다크)
 - [x] 실서버(이 PC, 4000) 2026-10-25: 사용자 요청으로 **DB 초기화**(백업 후 dev.db·아바타 삭제 → 마이그레이션 9개로 새로 만듦) + 재시작 — 아래 항목 모두 반영됨.
-- [x] funnel 을 4000 으로 전환(`(funnel 공개 주소 — 이 PC 에서 `tailscale funnel status` 로 확인)`), JWT_SECRET 교체·TRUST_PROXY=1
+- [x] funnel 을 4000 으로 전환(공개 주소(저장소엔 적지 않음 — 이 PC 에서 `tailscale funnel status` 로 확인)), JWT_SECRET 교체·TRUST_PROXY=1
 - [ ] 라즈베리파이(`hyukyeon`, Pi 2 armv7)의 `~/54_gostop` 복사본(코드+node_modules, 실행 안 함) 정리 여부 — 사용자가 이 PC 에서 돌리기로 함
 - [ ] 포트 5000 의 다른 서비스는 funnel 에서 빠짐(이제 외부 접속 불가) — 필요하면 다른 포트로 funnel 추가 (`tailscale funnel --bg --https=8443 5000` 등, 단 8443 은 지금 tailnet 전용 4173 이 사용 중)
 - [ ] (반영 완료, 참고용) 실서버 반영 필요: DB 백업 → `migrate deploy`(`20261031000000_sudoku_save`) → 재시작. 보너스패 3장·`/api/summary`·AI 수 선택·스도쿠 저장은 백엔드 변경이라 재시작해야 반영(프론트 dist 는 이미 새것이라 재시작 전엔 스도쿠 서버 저장이 404 → 안내 토스트 후 이 기기 자동 저장만 하고 나감, AI 수는 1명만, 첫 화면 현황은 '–')
